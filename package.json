@@ -1,8 +1,7 @@
 {
-  "private": true,
   "displayName": "Genie Aladdin Connect",
   "name": "homebridge-genie-aladdin-connect",
-  "version": "1.0.0",
+  "version": "1.0.0-beta.0",
   "description": "A short description about what your plugin does.",
   "license": "Apache-2.0",
   "repository": {
@@ -19,7 +18,6 @@
   "main": "dist/index.js",
   "scripts": {
     "lint": "eslint src/**.ts --max-warnings=0",
-    "lint-fix": "eslint src/**.ts --fix",
     "watch": "npm run build && npm link && nodemon",
     "build": "rimraf ./dist && tsc",
     "prepublishOnly": "npm run lint && npm run build"
@@ -31,11 +29,11 @@
     "connect"
   ],
   "dependencies": {
-    "@types/cache-manager": "^3.4.2",
     "axios": "^0.24.0",
     "cache-manager": "^3.4.4"
   },
   "devDependencies": {
+    "@types/cache-manager": "^3.4.2",
     "@types/node": "^16.10.9",
     "@typescript-eslint/eslint-plugin": "^5.0.0",
     "@typescript-eslint/parser": "^5.0.0",
