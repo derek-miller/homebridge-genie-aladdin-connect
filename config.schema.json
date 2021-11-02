@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
+  "pluginAlias": "GenieAladdinConnect",
   "pluginType": "platform",
   "singular": true,
   "schema": {
@@ -8,8 +8,21 @@
       "name": {
         "title": "Name",
         "type": "string",
+        "default": "Garage Door",
+        "required": true
+      },
+      "username": {
+        "title": "User Name/Email Address",
+        "type": "string",
+        "required": true
+      },
+      "password": {
+        "title": "Password",
+        "type": "string",
         "required": true,
-        "default": "Example Dynamic Platform"
+        "options": {
+          "hidden": true
+        }
       }
     }
   }

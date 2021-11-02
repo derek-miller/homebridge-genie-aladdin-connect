@@ -1,112 +1,170 @@
-import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
+import {Characteristic, CharacteristicValue, Logger, PlatformAccessory, Service} from 'homebridge';
 
-import { ExampleHomebridgePlatform } from './platform';
+import {GenieAladdinConnectHomebridgePlatform} from './platform';
+import {AladdinConnect, AladdinDesiredDoorStatus, AladdinDoor, AladdinDoorStatus} from './aladdinConnect';
 
 /**
  * Platform Accessory
  * An instance of this class is created for each accessory your platform registers
  * Each accessory may expose multiple services of different service types.
  */
-export class ExamplePlatformAccessory {
-  private service: Service;
+export class GenieAladdinConnectGarageDoorAccessory {
+  private readonly Service: typeof Service = this.platform.Service;
+  private readonly Characteristic: typeof Characteristic = this.platform.Characteristic;
+  private readonly log: Logger = this.platform.log;
+  private readonly aladdinConnect: AladdinConnect = this.platform.aladdinConnect;
 
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
-  private exampleStates = {
-    On: false,
-    Brightness: 100,
-  };
+  private readonly door: AladdinDoor = this.accessory.context.door;
+  private readonly id: string = `${this.door.portal}:${this.door.device}:${this.door.id}`;
+
+  private pendingChange = false;
+  private currentStatus: AladdinDoorStatus = AladdinDoorStatus.UNKNOWN;
+  private targetStatus: AladdinDesiredDoorStatus | null = null;
+  private expectedStatus: AladdinDoorStatus | null = null;
 
   constructor(
-    private readonly platform: ExampleHomebridgePlatform,
+    private readonly platform: GenieAladdinConnectHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
   ) {
+    this.accessory.getService(this.Service.AccessoryInformation)!
+      .setCharacteristic(this.Characteristic.Manufacturer, 'Genie')
+      .setCharacteristic(this.Characteristic.Model, 'Aladdin Connect')
+      .setCharacteristic(this.Characteristic.SerialNumber, this.id);
 
-    // set accessory information
-    this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Default-Manufacturer')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Default-Model')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, 'Default-Serial');
-
-    // get the LightBulb service if it exists, otherwise create a new LightBulb service
+    // get the GarageDoorOpener service if it exists, otherwise create a new GarageDoorOpener service
     // you can create multiple services for each accessory
-    this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
+    const service = (
+      this.accessory.getService(this.door.name) ||
+      this.accessory.addService(this.Service.GarageDoorOpener, this.door.name, this.id)
+    );
 
-    // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.exampleDisplayName);
+    service.setCharacteristic(this.Characteristic.Name, this.door.name);
 
     // each service must implement at-minimum the "required characteristics" for the given service type
-    // see https://developers.homebridge.io/#/service/Lightbulb
+    // see https://developers.homebridge.io/#/service/GarageDoorOpener
 
-    // register handlers for the On/Off Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.On)
-      .onSet(this.setOn.bind(this))                // SET - bind to the `setOn` method below
-      .onGet(this.getOn.bind(this));               // GET - bind to the `getOn` method below
+    // register handlers for the Target State Characteristic
+    service.getCharacteristic(this.Characteristic.TargetDoorState)
+      .onSet(this.setTargetDoorState.bind(this))
+      .onGet(this.getTargetDoorState.bind(this));
 
-    // register handlers for the Brightness Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-      .onSet(this.setBrightness.bind(this));       // SET - bind to the 'setBrightness` method below
+    // register handlers for the Current State Characteristic
+    service.getCharacteristic(this.Characteristic.CurrentDoorState)
+      .onGet(this.getCurrentDoorState.bind(this));
 
-    /**
-     * Creating multiple services of the same type.
-     *
-     * To avoid "Cannot add a Service with the same UUID another Service without also defining a unique 'subtype' property." error,
-     * when creating multiple services of the same type, you need to use the following syntax to specify a name and subtype id:
-     * this.accessory.getService('NAME') || this.accessory.addService(this.platform.Service.Lightbulb, 'NAME', 'USER_DEFINED_SUBTYPE_ID');
-     *
-     * The USER_DEFINED_SUBTYPE must be unique to the platform accessory (if you platform exposes multiple accessories, each accessory
-     * can use the same sub type id.)
-     */
-
-    // Example: add two "motion sensor" services to the accessory
-    const motionSensorOneService = this.accessory.getService('Motion Sensor One Name') ||
-      this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor One Name', 'YourUniqueIdentifier-1');
-
-    const motionSensorTwoService = this.accessory.getService('Motion Sensor Two Name') ||
-      this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor Two Name', 'YourUniqueIdentifier-2');
+    // register handlers for the Obstruction Detected Characteristic
+    service.getCharacteristic(this.Characteristic.ObstructionDetected)
+      .onGet(this.handleObstructionDetectedGet.bind(this));
 
     /**
      * Updating characteristics values asynchronously.
      *
-     * Example showing how to update the state of a Characteristic asynchronously instead
-     * of using the `on('get')` handlers.
-     * Here we change update the motion sensor trigger states on and off every 10 seconds
-     * the `updateCharacteristic` method.
+     * Here we poll the state from the aladdin connect service and use the result to update the current state
+     * characteristic.
      *
      */
-    let motionDetected = false;
     setInterval(() => {
-      // EXAMPLE - inverse the trigger
-      motionDetected = !motionDetected;
+      // Skip any updates while we are in progress of making a change.
+      if (this.pendingChange) {
+        this.log.debug('[%s] Skipping poll cycle due to a pending change', this.door.name);
+        return;
+      }
+      this.log.debug('[%s] Polling current door state', this.door.name);
+      this.aladdinConnect.getDoorStatus(this.door).then((info) => {
+        if (!info) {
+          return;
+        }
+        this.currentStatus = info.status;
 
-      // push the new value to HomeKit
-      motionSensorOneService.updateCharacteristic(this.platform.Characteristic.MotionDetected, motionDetected);
-      motionSensorTwoService.updateCharacteristic(this.platform.Characteristic.MotionDetected, !motionDetected);
+        // Reset the targetStatus when currentStatus reflects the change.
+        if (
+          (
+            this.targetStatus === AladdinDesiredDoorStatus.CLOSED &&
+            [
+              AladdinDoorStatus.CLOSING,
+              AladdinDoorStatus.CLOSED,
+              AladdinDoorStatus.TIMEOUT_CLOSING,
+            ].includes(this.currentStatus)
+          ) || (
+            this.targetStatus === AladdinDesiredDoorStatus.OPENED &&
+            [
+              AladdinDoorStatus.OPENING,
+              AladdinDoorStatus.OPEN,
+              AladdinDoorStatus.TIMEOUT_OPENING,
+            ].includes(this.currentStatus)
+          )
+        ) {
+          this.targetStatus = null;
+        }
+        // Reset the expectedStatus when currentStatus reflects the change.
+        if (
+          (
+            this.expectedStatus === AladdinDoorStatus.CLOSING &&
+            [
+              AladdinDoorStatus.CLOSING,
+              AladdinDoorStatus.CLOSED,
+              AladdinDoorStatus.TIMEOUT_CLOSING,
+            ].includes(this.currentStatus)
+          ) || (
+            this.expectedStatus === AladdinDoorStatus.OPENING &&
+            [
+              AladdinDoorStatus.OPENING,
+              AladdinDoorStatus.OPEN,
+              AladdinDoorStatus.TIMEOUT_OPENING,
+            ].includes(this.currentStatus)
+          )
+        ) {
+          this.expectedStatus = null;
+        }
 
-      this.platform.log.debug('Triggering motionSensorOneService:', motionDetected);
-      this.platform.log.debug('Triggering motionSensorTwoService:', !motionDetected);
-    }, 10000);
+        service.updateCharacteristic(
+          this.Characteristic.TargetDoorState,
+          this.getTargetDoorState(),
+        );
+        service.updateCharacteristic(
+          this.Characteristic.CurrentDoorState,
+          this.getCurrentDoorState(),
+        );
+      });
+    }, 2000);
   }
 
   /**
    * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
+   * These are sent when the user changes the state of an accessory, for example, opening the garage door.
    */
-  async setOn(value: CharacteristicValue) {
-    // implement your own code to turn your device on/off
-    this.exampleStates.On = value as boolean;
-
-    this.platform.log.debug('Set Characteristic On ->', value);
+  async setTargetDoorState(value: CharacteristicValue) {
+    if (this.getTargetDoorState() === value) {
+      this.log.debug('[%s] Ignoring target state set since it is unchanged', this.door.name);
+      return;
+    }
+    this.pendingChange = true;
+    try {
+      switch (value) {
+        case this.Characteristic.TargetDoorState.OPEN:
+          this.log.debug('[%s] Setting target state -> OPEN', this.door.name);
+          await this.aladdinConnect.setDoorStatus(this.door, AladdinDesiredDoorStatus.OPENED);
+          this.targetStatus = AladdinDesiredDoorStatus.OPENED;
+          this.expectedStatus = AladdinDoorStatus.OPENING;
+          break;
+        case this.Characteristic.TargetDoorState.CLOSED:
+          this.log.debug('[%s] Setting target state -> CLOSED', this.door.name);
+          await this.aladdinConnect.setDoorStatus(this.door, AladdinDesiredDoorStatus.CLOSED);
+          this.targetStatus = AladdinDesiredDoorStatus.CLOSED;
+          this.expectedStatus = AladdinDoorStatus.CLOSING;
+          break;
+      }
+    } finally {
+      this.pendingChange = false;
+    }
   }
 
   /**
    * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
+   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb
+   * is on.
    *
-   * GET requests should return as fast as possbile. A long delay here will result in
+   * GET requests should return as fast as possible. A long delay here will result in
    * HomeKit being unresponsive and a bad user experience in general.
    *
    * If your device takes time to respond you should update the status of your device
@@ -115,27 +173,65 @@ export class ExamplePlatformAccessory {
    * @example
    * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
    */
-  async getOn(): Promise<CharacteristicValue> {
-    // implement your own code to check if the device is on
-    const isOn = this.exampleStates.On;
-
-    this.platform.log.debug('Get Characteristic On ->', isOn);
-
-    // if you need to return an error to show the device as "Not Responding" in the Home app:
-    // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-
-    return isOn;
+  getTargetDoorState(): CharacteristicValue {
+    // Use the targeted status if defined, otherwise fall back to using the current status
+    switch (this.targetStatus) {
+      case AladdinDesiredDoorStatus.OPENED:
+        this.log.debug('[%s] Target state -> OPEN', this.door.name);
+        return this.Characteristic.TargetDoorState.OPEN;
+      case AladdinDesiredDoorStatus.CLOSED:
+        this.log.debug('Target state -> CLOSED');
+        return this.Characteristic.TargetDoorState.CLOSED;
+    }
+    switch (this.expectedStatus ?? this.currentStatus) {
+      case AladdinDoorStatus.OPEN:
+      case AladdinDoorStatus.OPENING:
+      case AladdinDoorStatus.TIMEOUT_OPENING:
+        this.log.debug('[%s] Target state -> OPEN', this.door.name);
+        return this.Characteristic.TargetDoorState.OPEN;
+      case AladdinDoorStatus.CLOSED:
+      case AladdinDoorStatus.CLOSING:
+      case AladdinDoorStatus.TIMEOUT_CLOSING:
+      case AladdinDoorStatus.UNKNOWN:
+      case AladdinDoorStatus.NOT_CONFIGURED:
+      default:
+        this.log.debug('Target state -> CLOSED');
+        return this.Characteristic.TargetDoorState.CLOSED;
+    }
   }
 
   /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, changing the Brightness
+   * Handle requests to get the current value of the "Obstruction Detected" characteristic
    */
-  async setBrightness(value: CharacteristicValue) {
-    // implement your own code to set the brightness
-    this.exampleStates.Brightness = value as number;
-
-    this.platform.log.debug('Set Characteristic Brightness -> ', value);
+  getCurrentDoorState(): CharacteristicValue {
+    switch (this.expectedStatus ?? this.currentStatus) {
+      case AladdinDoorStatus.OPEN:
+        this.log.debug('[%s] Current state -> OPEN', this.door.name);
+        return this.Characteristic.CurrentDoorState.OPEN;
+      case AladdinDoorStatus.OPENING:
+        this.log.debug('[%s] Current state -> OPENING', this.door.name);
+        return this.Characteristic.CurrentDoorState.OPENING;
+      case AladdinDoorStatus.CLOSED:
+        this.log.debug('[%s] Current state -> CLOSED', this.door.name);
+        return this.Characteristic.CurrentDoorState.CLOSED;
+      case AladdinDoorStatus.CLOSING:
+        this.log.debug('[%s] Current state -> CLOSING', this.door.name);
+        return this.Characteristic.CurrentDoorState.CLOSING;
+      case AladdinDoorStatus.TIMEOUT_OPENING:
+      case AladdinDoorStatus.TIMEOUT_CLOSING:
+      case AladdinDoorStatus.UNKNOWN:
+      case AladdinDoorStatus.NOT_CONFIGURED:
+      default:
+        this.log.debug('[%s] Current state -> STOPPED', this.door.name);
+        return this.Characteristic.CurrentDoorState.STOPPED;
+    }
   }
 
+  /**
+   * Handle requests to get the current value of the "Obstruction Detected" characteristic
+   */
+  handleObstructionDetectedGet(): CharacteristicValue {
+    // TODO
+    return false;
+  }
 }
