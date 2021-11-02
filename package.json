@@ -2,7 +2,7 @@
   "private": true,
   "displayName": "Genie Aladdin Connect",
   "name": "homebridge-genie-aladdin-connect",
-  "version": "1.0.0",
+  "version": "1.0.1-beta.0",
   "description": "A short description about what your plugin does.",
   "license": "Apache-2.0",
   "repository": {
