@@ -57,12 +57,21 @@ export class GenieAladdinConnectGarageDoorAccessory {
 
     this.aladdinConnect.subscribe(this.door, (info: AladdinDoorStatusInfo) => {
       this.currentStatus = info.status;
+      this.obstructionDetected =
+        // A fault happens when a door fails to open/close twice in a row and then must be operated
+        // manually.
+        info.fault ||
+        // If the door does not go into its desired state after some timeout it goes into one of
+        // these states. The first time it is recoverable.
+        [AladdinDoorStatus.TIMEOUT_CLOSING, AladdinDoorStatus.TIMEOUT_OPENING].includes(
+          info.status,
+        );
+      // If the desired status is NONE or an obstruction is detected, derive it from the current
+      // status.
       this.desiredStatus =
-        info.desiredStatus === AladdinDesiredDoorStatus.NONE
-          ? // If the desired status is unknown, use the current status.
-            this.convertStatusToDesiredStatus(this.currentStatus)
+        info.desiredStatus === AladdinDesiredDoorStatus.NONE || this.obstructionDetected
+          ? this.convertStatusToDesiredStatus(this.currentStatus)
           : info.desiredStatus;
-      this.obstructionDetected = info.fault;
     });
   }
 
