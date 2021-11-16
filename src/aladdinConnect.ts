@@ -338,7 +338,9 @@ export class AladdinConnect {
     desiredStatus: AladdinDesiredDoorStatus,
   ): Promise<boolean> {
     return this.lock.acquire(AladdinConnect.DOOR_STATUS_LOCK, async () => {
-      const response = await this.session.post('https://genie.m2.exosite.com/onep:v1/rpc/process', {
+      const response = await this.session.request({
+        method: 'post',
+        url: 'https://genie.m2.exosite.com/onep:v1/rpc/process',
         headers: {
           Authorization: `Token: ${await this.getLoginToken()}`,
         },
