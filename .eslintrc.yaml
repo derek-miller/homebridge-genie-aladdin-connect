@@ -5,7 +5,7 @@ extends:
   - plugin:@typescript-eslint/eslint-recommended
   - plugin:@typescript-eslint/recommended # uses the recommended rules from the @typescript-eslint/eslint-plugin
 parserOptions:
-  ecmaVersion: 2018
+  ecmaVersion: 2020
   sourceType: module
 ignorePatterns:
   - dist
@@ -13,16 +13,12 @@ rules:
   quotes:
     - warn
     - single
-  indent:
-    - warn
-    - 2
-    - SwitchCase: 1
   semi:
-    - 'off'
+    - "off"
   comma-dangle:
     - warn
     - always-multiline
-  dot-notation: 'off'
+  dot-notation: "off"
   eqeqeq: warn
   curly:
     - warn
@@ -33,7 +29,7 @@ rules:
     - warn
   max-len:
     - warn
-    - code: 120
+    - code: 100
       tabWidth: 2
       ignoreUrls: true
       ignoreStrings: true
@@ -42,7 +38,7 @@ rules:
   no-console:
     - warn # use the provided Homebridge log method instead
   no-non-null-assertion:
-    - 'off'
+    - "off"
   comma-spacing:
     - error
   no-multi-spaces:
@@ -54,9 +50,11 @@ rules:
     - warn
     - always
     - exceptAfterSingleLine: true
-  "@typescript-eslint/explicit-function-return-type": 'off'
-  "@typescript-eslint/no-non-null-assertion": 'off'
-  "@typescript-eslint/explicit-module-boundary-types": 'off'
+  no-unused-vars: "off"
+  "@typescript-eslint/no-unused-vars": "error"
+  "@typescript-eslint/explicit-function-return-type": "off"
+  "@typescript-eslint/no-non-null-assertion": "off"
+  "@typescript-eslint/explicit-module-boundary-types": "off"
   "@typescript-eslint/semi":
     - warn
   "@typescript-eslint/member-delimiter-style":

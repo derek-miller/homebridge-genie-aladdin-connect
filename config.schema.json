@@ -9,6 +9,7 @@
         "title": "Name",
         "type": "string",
         "default": "Garage Door",
+        "minLength": 1,
         "required": true
       },
       "username": {
@@ -23,6 +24,38 @@
         "options": {
           "hidden": true
         }
+      },
+      "userInfoCacheTtl": {
+        "title": "User info cache TTL (in seconds)",
+        "type": "integer",
+        "default": 3600,
+        "minimum": 300,
+        "maximum": 86400,
+        "required": true
+      },
+      "doorStatusStationaryCacheTtl": {
+        "title": "Stationary door status cache TTL (in seconds). Used when the door is in a stationary state.",
+        "type": "integer",
+        "default": 15,
+        "minimum": 5,
+        "maximum": 60,
+        "required": true
+      },
+      "doorStatusTransitioningCacheTtl": {
+        "title": "Transitioning door status cache TTL (in seconds). Used when the door is in a transitioning state.",
+        "type": "integer",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 30,
+        "required": true
+      },
+      "doorStatusPollInterval": {
+        "title": "Door Status Poll Interval (in milliseconds)",
+        "type": "integer",
+        "default": 15000,
+        "minimum": 5000,
+        "maximum": 60000,
+        "required": true
       }
     }
   }
