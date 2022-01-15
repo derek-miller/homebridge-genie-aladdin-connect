@@ -4,7 +4,8 @@
 
 # Homebridge Platform Plugin
 
-[Genie Aladdin Connect](https://www.geniecompany.com/aladdin-connect-by-genie) plugin for [Homebridge](https://github.com/homebridge/homebridge).
+[Genie Aladdin Connect](https://www.geniecompany.com/aladdin-connect-by-genie) plugin for
+[Homebridge](https://github.com/homebridge/homebridge).
 
 ## Configuration
 

@@ -141,9 +141,6 @@ export class AladdinConnect {
     BuildVersion: '131',
   };
 
-  // Events
-  private static readonly POLL_DOOR_STATUS = 'POLL_DOOR_STATUS';
-
   private static readonly DOOR_STATUS_LOCK = 'DOOR_STATUS';
 
   private readonly lock = new AsyncLock();
@@ -187,7 +184,7 @@ export class AladdinConnect {
         // Acquire the status lock before emitting any new events.
         this.log.debug('[API] Polling status for door %s', door.name);
         try {
-          PubSub.publish(AladdinConnect.doorStatusTopic(door), await this.getDoorStatus(door));
+          PubSub.publish(topic, await this.getDoorStatus(door));
         } catch (error: unknown) {
           if (error instanceof Error) {
             this.log.error(
@@ -284,6 +281,13 @@ export class AladdinConnect {
                 calls,
               },
             });
+            this.log.debug(
+              'portal: %s, device: %s, door %d, status: %s',
+              door.portal,
+              door.device,
+              door.id,
+              JSON.stringify(response.data),
+            );
             const [
               nameCallResponse,
               statusCallResponse,
@@ -410,6 +414,7 @@ export class AladdinConnect {
             },
           },
         );
+        this.log.debug('user info: %s', JSON.stringify(response.data));
         return response.data;
       },
       { ttl: this.userInfoCacheTtl },
@@ -429,6 +434,7 @@ export class AladdinConnect {
             },
           },
         );
+        this.log.debug('user portals: %s', JSON.stringify(response.data));
         return response.data;
       },
       { ttl: this.userInfoCacheTtl },
@@ -447,6 +453,7 @@ export class AladdinConnect {
             },
           },
         );
+        this.log.debug('user portal details: %s', JSON.stringify(response.data));
         return response.data;
       },
       { ttl: this.userInfoCacheTtl },
