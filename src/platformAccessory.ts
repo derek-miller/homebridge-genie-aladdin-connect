@@ -18,7 +18,7 @@ export class GenieAladdinConnectGarageDoorAccessory {
   private readonly aladdinConnect = this.platform.aladdinConnect;
   private readonly context = <GenieAladdinConnectPlatformAccessoryContext>this.accessory.context;
   private readonly door = this.context.door;
-  private readonly id: string = `${this.door.portal}:${this.door.device}:${this.door.id}`;
+  private readonly id: string = `${this.door.deviceId}:${this.door.index}`;
 
   private _currentStatus = AladdinDoorStatus.UNKNOWN;
   private _desiredStatus = AladdinDesiredDoorStatus.NONE;

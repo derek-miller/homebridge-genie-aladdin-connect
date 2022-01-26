@@ -7,66 +7,78 @@ import axiosRetry from 'axios-retry';
 import PubSub from 'pubsub-js';
 import Token = PubSubJS.Token;
 import AsyncLock from 'async-lock';
+import { URLSearchParams } from 'url';
 
-interface AladdinUserInfo {
-  email: string;
-  fullName: string;
-  id: string;
-  rid: string;
-  meta: AladdinUserInfoMeta | null;
-  phoneNumber: string;
-  userName: string;
-  activated: boolean;
-  // groups: AladdinGroup[]; // TODO
-  permissions: AladdinUserPermission[];
+interface AladdinOauthResponse {
+  refresh_token: string;
+  token_type: 'bearer';
+  user_id: number;
+  expires_in: number;
+  access_token: string;
+  scope: 'operator';
 }
 
-interface AladdinUserInfoMeta {
-  acceptTerms: boolean;
-  securityQuestion: number;
-  securityAnswer: string;
+interface AladdinConfigurationEntity {
+  devices: AladdinDeviceEntity[];
 }
 
-interface AladdinUserPermission {
-  access: string;
-  oid: AladdinUserPermissionOid;
+interface AladdinDeviceEntity {
+  is_locked: boolean;
+  family: number;
+  id: number;
+  legacy_id: string;
+  location_id: number;
+  ssid: string;
+  updated_at: string;
+  user_id: number;
+  rssi: number;
+  model: string;
+  description: string;
+  legacy_key: string;
+  created_at: string;
+  lua_version: string;
+  timezone: string;
+  status: number;
+  doors: AladdinDoorEntity[];
+  is_enabled: boolean;
+  zipcode: string;
+  is_expired: boolean;
+  location_name: string;
+  serial: string;
+  vendor: string;
+  ownership: string;
+  name: string;
+  is_updating_firmware: boolean;
 }
 
-interface AladdinUserPermissionOid {
-  type: AladdinUserPermissionType;
-  id: string;
-}
-
-type AladdinUserPermissionType = 'Portal' | 'Domain' | 'Device';
-
-interface AladdinPortal {
-  PortalName: string;
-  PortalID: string;
-  PortalRID: string;
-  UserEmail: string;
-  Description: string;
-  Permissions: AladdinPortalPermission[];
-}
-
-interface AladdinPortalPermission {
-  access: string;
-}
-
-interface AladdinPortalDetails {
-  devices: string[];
-  id: string;
-  info: AladdinPortalDetailsInfo;
-}
-
-interface AladdinPortalDetailsInfo {
-  key: string;
-  // TODO incomplete
+interface AladdinDoorEntity {
+  desired_door_status_outcome: string;
+  updated_at: string;
+  desired_door_status: string;
+  id: number;
+  user_id: number;
+  vehicle_color: string;
+  door_index: number;
+  icon: number;
+  link_status: number;
+  door_updated_at: string;
+  created_at: string;
+  desired_status: number;
+  status: number;
+  fault: number;
+  ble_strength: number;
+  is_enabled: boolean;
+  battery_level: number;
+  device_id: number;
+  name: string;
+  vehicle_type: string;
 }
 
 export interface AladdinDoor {
-  portal: string;
-  device: string;
+  deviceId: number;
   id: number;
+  index: number;
+  serialNumber: string;
   name: string;
 }
 
@@ -111,11 +123,7 @@ export interface AladdinConnectConfig {
   doorStatusTransitioningCacheTtl?: number;
 }
 
-/**
- * https://documenter.getpostman.com/view/5856894/RzZAjHxV#cfb1b456-2c2d-42a5-9b73-6053d87a3feb
- */
 export class AladdinConnect {
-  private static readonly ALL_DOOR_IDS = [1, 2, 3];
   private static readonly PUB_SUB_DOOR_STATUS_TOPIC = 'door';
 
   private static readonly USER_DATA_CACHE_TTL_S_DEFAULT = 60 * 60;
@@ -134,11 +142,9 @@ export class AladdinConnect {
   private static readonly DOOR_STATUS_POLL_INTERVAL_MS_MIN = 5 * 1000;
   private static readonly DOOR_STATUS_POLL_INTERVAL_MS_MAX = 60 * 1000;
 
+  private static readonly API_HOST = '16375mc41i.execute-api.us-east-1.amazonaws.com';
   private static readonly DEFAULT_HEADERS = {
-    AppVersion: '3.0.0',
-    BundleName: 'com.geniecompany.AladdinConnect',
-    'User-Agent': 'Aladdin Connect iOS v3.0.0',
-    BuildVersion: '131',
+    'X-API-KEY': '2BcHhgzjAa58BXkpbYM977jFvr3pJUhH52nflMuS',
   };
 
   private static readonly DOOR_STATUS_LOCK = 'DOOR_STATUS';
@@ -206,111 +212,69 @@ export class AladdinConnect {
   }
 
   async getAllDoors(): Promise<AladdinDoor[]> {
-    const doorStatuses = await this.getAllDoorStatuses();
-    return doorStatuses.map(({ door }) => door);
-  }
+    return this.lock.acquire(
+      AladdinConnect.DOOR_STATUS_LOCK,
+      async (): Promise<AladdinDoor[]> =>
+        this.cache.wrap(
+          'getAllDoors',
+          async () => {
+            const response = <AxiosResponse<AladdinConfigurationEntity>>await this.session.get(
+              `https://${AladdinConnect.API_HOST}/IOS/configuration`,
+              {
+                headers: {
+                  Authorization: `Bearer ${await this.getOauthToken()}`,
+                },
+              },
+            );
+            this.log.debug('[API] Configuration response: %s', JSON.stringify(response.data));
 
-  async getAllDoorStatuses(): Promise<AladdinDoorStatusInfo[]> {
-    const statusPromises: Promise<AladdinDoorStatusInfo | null>[] = [];
-    for (const { id: portal, devices } of await this.getUserPortalsDetails()) {
-      for (const device of devices) {
-        for (const id of AladdinConnect.ALL_DOOR_IDS) {
-          statusPromises.push(
-            this.getDoorStatus({
-              portal,
-              device,
-              id,
-            }),
-          );
-        }
-      }
-    }
-    return <AladdinDoorStatusInfo[]>(
-      (await Promise.all(statusPromises)).filter((status) => status !== null)
+            return response.data.devices.flatMap((device) =>
+              device.doors.map((door) => ({
+                deviceId: device.id,
+                doorId: door.id,
+                doorIndex: door.door_index,
+                serialNumber: device.serial,
+                name: door.name,
+              })),
+            );
+          },
+          {
+            ttl: this.userInfoCacheTtl,
+          },
+        ),
     );
   }
 
-  async getDoorStatus(door: Omit<AladdinDoor, 'name'>): Promise<AladdinDoorStatusInfo | null> {
+  async getDoorStatus(door: AladdinDoor): Promise<AladdinDoorStatusInfo | null> {
     return this.lock.acquire(
       AladdinConnect.DOOR_STATUS_LOCK,
       async (): Promise<AladdinDoorStatusInfo | null> =>
         this.cache.wrap(
           AladdinConnect.doorStatusCacheKey(door),
           async (): Promise<AladdinDoorStatusInfo | null> => {
-            if (!AladdinConnect.ALL_DOOR_IDS.includes(door.id)) {
-              throw new Error(
-                `unknown door id ${door.id}; must be one of [${AladdinConnect.ALL_DOOR_IDS.join(
-                  ', ',
-                )}]`,
-              );
-            }
-
-            const calls: object[] = [];
-            let callId = 1;
-            for (const func of [
-              'name',
-              'door_status',
-              'desired_status',
-              'link_status',
-              'battery_level',
-              'fault',
-            ]) {
-              calls.push({
-                id: callId++,
-                procedure: 'read',
-                arguments: [
-                  {
-                    alias: `dps${door.id}.${func}`,
-                  },
-                  {},
-                ],
-              });
-            }
-            const response = await this.session.request({
-              method: 'post',
-              url: 'https://genie.m2.exosite.com/onep:v1/rpc/process',
-              headers: {
-                ...AladdinConnect.DEFAULT_HEADERS,
-                Authorization: `Token: ${await this.getLoginToken()}`,
-              },
-              data: {
-                auth: {
-                  cik: await this.getPortalKey(door.portal),
-                  client_id: door.device,
+            const response = <AxiosResponse<AladdinDeviceEntity>>await this.session.get(
+              `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${await this.getOauthToken()}`,
                 },
-                calls,
               },
-            });
+            );
             this.log.debug(
-              'portal: %s, device: %s, door %d, status: %s',
-              door.portal,
-              door.device,
-              door.id,
+              '[API] Device %s configuration response: %s',
+              door.deviceId,
               JSON.stringify(response.data),
             );
-            const [
-              nameCallResponse,
-              statusCallResponse,
-              desiredStatusCallResponse,
-              linkStatusCallResponse,
-              batteryLevelCallResponse,
-              faultCallResponse,
-            ] = response.data;
-            const name = AladdinConnect.getCallResult(nameCallResponse);
-            const status = AladdinConnect.getCallResult(
-              statusCallResponse,
-              AladdinDoorStatus.UNKNOWN,
+
+            const doorEntity = response.data.doors.find(
+              ({ door_index: index }) => door.index === index,
             );
-            const desiredStatus = AladdinConnect.getCallResult(
-              desiredStatusCallResponse,
-              AladdinDesiredDoorStatus.NONE,
-            );
-            const linkStatus = AladdinConnect.getCallResult(
-              linkStatusCallResponse,
-              AladdinLink.UNKNOWN,
-            );
-            const batteryLevel = AladdinConnect.getCallResult(batteryLevelCallResponse, null);
-            const fault = !!AladdinConnect.getCallResult(faultCallResponse, 0);
+            const name = doorEntity?.name;
+            const status = doorEntity?.status ?? AladdinDoorStatus.UNKNOWN;
+            const desiredStatus = doorEntity?.desired_status ?? AladdinDesiredDoorStatus.NONE;
+            const linkStatus = doorEntity?.link_status ?? AladdinLink.UNKNOWN;
+            const batteryLevel = doorEntity?.battery_level ?? null;
+            const fault = !!doorEntity?.fault;
             if (!name) {
               return null;
             }
@@ -337,139 +301,49 @@ export class AladdinConnect {
     );
   }
 
-  async setDoorStatus(
-    door: AladdinDoor,
-    desiredStatus: AladdinDesiredDoorStatus,
-  ): Promise<boolean> {
+  async setDoorStatus(door: AladdinDoor, desiredStatus: AladdinDesiredDoorStatus): Promise<void> {
     return this.lock.acquire(AladdinConnect.DOOR_STATUS_LOCK, async () => {
-      const response = await this.session.request({
-        method: 'post',
-        url: 'https://genie.m2.exosite.com/onep:v1/rpc/process',
-        headers: {
-          Authorization: `Token: ${await this.getLoginToken()}`,
+      const commandKey = desiredStatus === AladdinDesiredDoorStatus.OPEN ? 'OpenDoor' : 'CloseDoor';
+      const response = <AxiosResponse<AladdinDeviceEntity>>await this.session.post(
+        `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}/door/${door.index}/command`,
+        {
+          command_key: commandKey,
         },
-        data: {
-          auth: {
-            cik: await this.getPortalKey(door.portal),
-            client_id: door.device,
+        {
+          headers: {
+            Authorization: `Bearer ${await this.getOauthToken()}`,
           },
-          calls: [
-            {
-              arguments: [
-                {
-                  alias: `dps${door.id}.desired_status`,
-                },
-                desiredStatus,
-              ],
-              id: 1,
-              procedure: 'write',
-            },
-            {
-              arguments: [
-                {
-                  alias: `dps${door.id}.desired_status_user`,
-                },
-                this.config.username,
-              ],
-              id: 2,
-              procedure: 'write',
-            },
-          ],
         },
-      });
+      );
+      this.log.debug('[API] Genie %s response: %s', commandKey, JSON.stringify(response.data));
+
       await this.cache.del(AladdinConnect.doorStatusCacheKey(door));
-      return response.data.every(({ status }) => status === 'ok');
     });
   }
 
-  private async getLoginToken(): Promise<string> {
+  private async getOauthToken(): Promise<string> {
     return this.cache.wrap(
-      'getLoginToken',
+      'getOauthToken',
       async () => {
-        const token = <AxiosResponse<string>>await this.session.get(
-          'https://genie.exosite.com/api/portals/v1/users/_this/token',
+        const data = new URLSearchParams();
+        data.append('grant_type', 'password');
+        data.append('client_id', '1000');
+        data.append('username', this.config.username);
+        data.append('password', Buffer.from(this.config.password).toString('base64'));
+
+        const response = <AxiosResponse<AladdinOauthResponse>>await this.session.post(
+          `https://${AladdinConnect.API_HOST}/IOS/oauth/token`,
+          data,
           {
             headers: {
-              Authorization: `Basic ${Buffer.from(
-                `${this.config.username}:${this.config.password}`,
-              ).toString('base64')}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
             },
           },
         );
-        return token.data;
+        return response.data.access_token;
       },
       { ttl: this.userInfoCacheTtl },
     );
-  }
-
-  private async getUserInfo(): Promise<AladdinUserInfo> {
-    return this.cache.wrap(
-      'getUserInfo',
-      async () => {
-        const response = <AxiosResponse<AladdinUserInfo>>await this.session.get(
-          'https://genie.exosite.com/api/portals/v1/users/_this',
-          {
-            headers: {
-              Authorization: `Token: ${await this.getLoginToken()}`,
-            },
-          },
-        );
-        this.log.debug('user info: %s', JSON.stringify(response.data));
-        return response.data;
-      },
-      { ttl: this.userInfoCacheTtl },
-    );
-  }
-
-  private async getUserPortals(): Promise<AladdinPortal[]> {
-    return this.cache.wrap(
-      'getUserPortals',
-      async () => {
-        const { id } = await this.getUserInfo();
-        const response = <AxiosResponse<AladdinPortal[]>>await this.session.get(
-          `https://genie.exosite.com/api/portals/v1/users/${id}/portals`,
-          {
-            headers: {
-              Authorization: `Token: ${await this.getLoginToken()}`,
-            },
-          },
-        );
-        this.log.debug('user portals: %s', JSON.stringify(response.data));
-        return response.data;
-      },
-      { ttl: this.userInfoCacheTtl },
-    );
-  }
-
-  private async getUserPortalDetails(id: string): Promise<AladdinPortalDetails> {
-    return this.cache.wrap(
-      `getUserPortalDetails:${id}`,
-      async () => {
-        const response = <AxiosResponse<AladdinPortalDetails>>await this.session.get(
-          `https://genie.exosite.com/api/portals/v1/portals/${id}`,
-          {
-            headers: {
-              Authorization: `Token: ${await this.getLoginToken()}`,
-            },
-          },
-        );
-        this.log.debug('user portal details: %s', JSON.stringify(response.data));
-        return response.data;
-      },
-      { ttl: this.userInfoCacheTtl },
-    );
-  }
-
-  private async getPortalKey(id: string): Promise<string> {
-    const {
-      info: { key },
-    } = await this.getUserPortalDetails(id);
-    return key;
-  }
-
-  private async getUserPortalsDetails(): Promise<AladdinPortalDetails[]> {
-    const portals = await this.getUserPortals();
-    return Promise.all(portals.map(({ PortalID: id }) => this.getUserPortalDetails(id)));
   }
 
   private get userInfoCacheTtl(): number {
@@ -514,18 +388,11 @@ export class AladdinConnect {
     );
   }
 
-  private static getCallResult(callResponse, defaultValue?) {
-    if (callResponse?.status !== 'ok') {
-      return defaultValue;
-    }
-    return callResponse?.result?.[0]?.[1] ?? defaultValue;
+  private static doorStatusTopic(door: AladdinDoor): string {
+    return `${AladdinConnect.PUB_SUB_DOOR_STATUS_TOPIC}.${door.deviceId}.${door.index}`;
   }
 
-  private static doorStatusTopic(door: Omit<AladdinDoor, 'name'>): string {
-    return `${AladdinConnect.PUB_SUB_DOOR_STATUS_TOPIC}.${door.device}.${door.id}`;
-  }
-
-  private static doorStatusCacheKey(door: Omit<AladdinDoor, 'name'>): string {
-    return `${door.portal}:${door.device}:${door.id}`;
+  private static doorStatusCacheKey(door: AladdinDoor): string {
+    return `${door.deviceId}:${door.index}`;
   }
 }

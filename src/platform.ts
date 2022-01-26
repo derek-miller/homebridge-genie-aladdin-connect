@@ -22,6 +22,7 @@ export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlu
 
   public readonly accessories: PlatformAccessory[] = [];
   public readonly aladdinConnect: AladdinConnect;
+  public readonly aladdinConnectNew: AladdinConnect;
 
   constructor(
     public readonly log: Logger,
@@ -29,6 +30,7 @@ export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlu
     public readonly api: API,
   ) {
     this.aladdinConnect = new AladdinConnect(log, <AladdinConnectConfig>(<unknown>config));
+    this.aladdinConnectNew = new AladdinConnect(log, <AladdinConnectConfig>(<unknown>config));
     this.api.on(APIEvent.DID_FINISH_LAUNCHING, async () => this.discoverDevices());
   }
 
@@ -42,9 +44,7 @@ export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlu
     const discoveredUUIDs: Set<string> = new Set();
 
     for (const door of doors) {
-      const uuid = this.api.hap.uuid.generate(
-        `${door.portal}:${door.device}:${door.id}:${door.name}`,
-      );
+      const uuid = this.api.hap.uuid.generate(`${door.deviceId}:${door.index}`);
       discoveredUUIDs.add(uuid);
 
       let accessory = this.accessories.find((accessory) => accessory.UUID === uuid);
