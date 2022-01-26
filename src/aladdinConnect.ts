@@ -229,13 +229,16 @@ export class AladdinConnect {
             this.log.debug('[API] Configuration response: %s', JSON.stringify(response.data));
 
             return response.data.devices.flatMap((device) =>
-              device.doors.map((door) => ({
-                deviceId: device.id,
-                doorId: door.id,
-                doorIndex: door.door_index,
-                serialNumber: device.serial,
-                name: door.name,
-              })),
+              device.doors.map(
+                (door) =>
+                  <AladdinDoor>{
+                    deviceId: device.id,
+                    id: door.id,
+                    index: door.door_index,
+                    serialNumber: device.serial,
+                    name: door.name,
+                  },
+              ),
             );
           },
           {
