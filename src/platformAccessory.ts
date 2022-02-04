@@ -7,6 +7,7 @@ import {
   AladdinDoorStatus,
   AladdinDoorStatusInfo,
 } from './aladdinConnect';
+import { DEFAULT_STATUS_LOW_BATTERY_PERCENT } from './settings';
 
 export interface GenieAladdinConnectPlatformAccessoryContext {
   door: AladdinDoor;
@@ -23,9 +24,13 @@ export class GenieAladdinConnectGarageDoorAccessory {
   private _currentStatus = AladdinDoorStatus.UNKNOWN;
   private _desiredStatus = AladdinDesiredDoorStatus.NONE;
   private _obstructionDetected = false;
+  private _batteryLevel = -1;
+  private _statusLowBattery = false;
   private targetStateCharacteristic: Characteristic;
   private currentStateCharacteristic: Characteristic;
   private obstructionDetectedCharacteristic: Characteristic;
+  private batteryLevelCharacteristic: Characteristic | null = null;
+  private statusLowBatteryCharacteristic: Characteristic | null = null;
 
   constructor(
     private readonly platform: GenieAladdinConnectHomebridgePlatform,
@@ -57,6 +62,14 @@ export class GenieAladdinConnectGarageDoorAccessory {
     this.obstructionDetectedCharacteristic = service
       .getCharacteristic(this.platform.Characteristic.ObstructionDetected)
       .onGet(this.getObstructionDetected.bind(this));
+    if (this.door.hasBatteryLevel) {
+      this.batteryLevelCharacteristic = service
+        .getCharacteristic(this.platform.Characteristic.BatteryLevel)
+        .onGet(this.getBatteryLevel.bind(this));
+      this.statusLowBatteryCharacteristic = service
+        .getCharacteristic(this.platform.Characteristic.StatusLowBattery)
+        .onGet(this.getStatusLowBattery.bind(this));
+    }
 
     this.aladdinConnect.subscribe(this.door, (info: AladdinDoorStatusInfo) => {
       this.currentStatus = info.status;
@@ -69,6 +82,9 @@ export class GenieAladdinConnectGarageDoorAccessory {
         [AladdinDoorStatus.TIMEOUT_CLOSING, AladdinDoorStatus.TIMEOUT_OPENING].includes(
           info.status,
         );
+      if (this.door.hasBatteryLevel && info.batteryPercent !== null) {
+        this.batteryLevel = info.batteryPercent;
+      }
       // If the desired status is NONE or an obstruction is detected, derive it from the current
       // status.
       this.desiredStatus =
@@ -136,6 +152,41 @@ export class GenieAladdinConnectGarageDoorAccessory {
     this.obstructionDetectedCharacteristic.updateValue(this._obstructionDetected);
   }
 
+  private get batteryLevel(): number {
+    return this._batteryLevel;
+  }
+
+  private set batteryLevel(value: number) {
+    const batteryLevel = Math.min(100, Math.max(0, value));
+    const statusLowBattery =
+      batteryLevel <= (this.platform.config?.batteryLowLevel ?? DEFAULT_STATUS_LOW_BATTERY_PERCENT);
+
+    if (this._batteryLevel !== batteryLevel && this.batteryLevelCharacteristic !== null) {
+      this.log.debug(
+        '[%s] Update Characteristic BatteryLevel: %s -> %s',
+        this.door.name,
+        this._batteryLevel,
+        batteryLevel,
+      );
+      this.batteryLevelCharacteristic.updateValue(batteryLevel);
+    }
+    this._batteryLevel = batteryLevel;
+
+    if (
+      this._statusLowBattery !== statusLowBattery &&
+      this.statusLowBatteryCharacteristic !== null
+    ) {
+      this.log.debug(
+        '[%s] Update Characteristic StatusLowBattery: %s -> %s',
+        this.door.name,
+        this._statusLowBattery ? 'YES' : 'NO',
+        statusLowBattery ? 'YES' : 'NO',
+      );
+      this.statusLowBatteryCharacteristic.updateValue(this._statusLowBattery);
+    }
+    this._statusLowBattery = statusLowBattery;
+  }
+
   private async setTargetDoorState(value: CharacteristicValue): Promise<void> {
     const desiredStatus = this.convertTargetStateValueToDesiredStatus(value);
     this.log.debug(
@@ -171,6 +222,20 @@ export class GenieAladdinConnectGarageDoorAccessory {
       this.obstructionDetected ? 'YES' : 'NO',
     );
     return this.obstructionDetected;
+  }
+
+  private getBatteryLevel(): CharacteristicValue {
+    this.log.debug('[%s] Get Characteristic BatteryLevel ->', this.door.name, this.batteryLevel);
+    return this.batteryLevel;
+  }
+
+  private getStatusLowBattery(): CharacteristicValue {
+    this.log.debug(
+      '[%s] Get Characteristic StatusLowBattery ->',
+      this.door.name,
+      this._statusLowBattery ? 'YES' : 'NO',
+    );
+    return this._statusLowBattery;
   }
 
   private convertTargetStateValueToDesiredStatus(

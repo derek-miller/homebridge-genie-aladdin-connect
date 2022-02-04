@@ -80,6 +80,7 @@ export interface AladdinDoor {
   index: number;
   serialNumber: string;
   name: string;
+  hasBatteryLevel: boolean;
 }
 
 export interface AladdinDoorStatusInfo {
@@ -108,6 +109,7 @@ export enum AladdinDesiredDoorStatus {
 }
 
 enum AladdinLink {
+  // noinspection JSUnusedGlobalSymbols
   UNKNOWN = 0,
   NOT_CONFIGURED = 1,
   PAIRED = 2,
@@ -117,10 +119,12 @@ enum AladdinLink {
 export interface AladdinConnectConfig {
   username: string;
   password: string;
+  batteryLowLevel?: number;
   userInfoCacheTtl?: number;
-  doorStatusPollInterval?: number;
   doorStatusStationaryCacheTtl?: number;
   doorStatusTransitioningCacheTtl?: number;
+  doorStatusPollInterval?: number;
+  logApiResponses?: boolean;
 }
 
 export class AladdinConnect {
@@ -218,15 +222,33 @@ export class AladdinConnect {
         this.cache.wrap(
           'getAllDoors',
           async () => {
-            const response = <AxiosResponse<AladdinConfigurationEntity>>await this.session.get(
-              `https://${AladdinConnect.API_HOST}/IOS/configuration`,
-              {
-                headers: {
-                  Authorization: `Bearer ${await this.getOauthToken()}`,
+            const token = await this.getOauthToken();
+            if (!token) {
+              return [];
+            }
+            let response;
+            try {
+              response = <AxiosResponse<AladdinConfigurationEntity>>await this.session.get(
+                `https://${AladdinConnect.API_HOST}/IOS/configuration`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
                 },
-              },
-            );
-            this.log.debug('[API] Configuration response: %s', JSON.stringify(response.data));
+              );
+            } catch (error: unknown) {
+              if (error instanceof Error) {
+                this.log.error(
+                  '[API] An error occurred getting devices from account; %s',
+                  error.message,
+                );
+              }
+              return [];
+            }
+
+            if (this.config.logApiResponses) {
+              this.log.debug('[API] Configuration response: %s', JSON.stringify(response.data));
+            }
 
             return response.data.devices.flatMap((device) =>
               device.doors.map(
@@ -237,6 +259,10 @@ export class AladdinConnect {
                     index: door.door_index,
                     serialNumber: device.serial,
                     name: door.name,
+                    // The devices that do not have batteries report a level of 0.
+                    // I could not identify a better way to figure this out as I only have
+                    // non-battery devices.
+                    hasBatteryLevel: (door.battery_level ?? 0) > 0,
                   },
               ),
             );
@@ -255,19 +281,33 @@ export class AladdinConnect {
         this.cache.wrap(
           AladdinConnect.doorStatusCacheKey(door),
           async (): Promise<AladdinDoorStatusInfo | null> => {
-            const response = <AxiosResponse<AladdinDeviceEntity>>await this.session.get(
-              `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}`,
-              {
-                headers: {
-                  Authorization: `Bearer ${await this.getOauthToken()}`,
+            const token = await this.getOauthToken();
+            if (!token) {
+              return null;
+            }
+            let response;
+            try {
+              response = <AxiosResponse<AladdinDeviceEntity>>await this.session.get(
+                `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
                 },
-              },
-            );
-            this.log.debug(
-              '[API] Device %s configuration response: %s',
-              door.deviceId,
-              JSON.stringify(response.data),
-            );
+              );
+            } catch (error: unknown) {
+              if (error instanceof Error) {
+                this.log.error('[API] An error occurred getting device status; %s', error.message);
+              }
+              return null;
+            }
+            if (this.config.logApiResponses) {
+              this.log.debug(
+                '[API] Device %s configuration response: %s',
+                door.deviceId,
+                JSON.stringify(response.data),
+              );
+            }
 
             const doorEntity = response.data.doors.find(
               ({ door_index: index }) => door.index === index,
@@ -276,7 +316,8 @@ export class AladdinConnect {
             const status = doorEntity?.status ?? AladdinDoorStatus.UNKNOWN;
             const desiredStatus = doorEntity?.desired_status ?? AladdinDesiredDoorStatus.NONE;
             const linkStatus = doorEntity?.link_status ?? AladdinLink.UNKNOWN;
-            const batteryLevel = doorEntity?.battery_level ?? null;
+            const batteryLevel = doorEntity?.battery_level ?? 0;
+
             const fault = !!doorEntity?.fault;
             if (!name) {
               return null;
@@ -288,7 +329,8 @@ export class AladdinConnect {
               },
               status: status,
               desiredStatus,
-              batteryPercent: linkStatus === AladdinLink.CONNECTED ? batteryLevel ?? null : null,
+              batteryPercent:
+                linkStatus === AladdinLink.CONNECTED && batteryLevel > 0 ? batteryLevel : null,
               fault,
             };
           },
@@ -306,25 +348,46 @@ export class AladdinConnect {
 
   async setDoorStatus(door: AladdinDoor, desiredStatus: AladdinDesiredDoorStatus): Promise<void> {
     return this.lock.acquire(AladdinConnect.DOOR_STATUS_LOCK, async () => {
+      const token = await this.getOauthToken();
+      if (!token) {
+        return;
+      }
+
       const commandKey = desiredStatus === AladdinDesiredDoorStatus.OPEN ? 'OpenDoor' : 'CloseDoor';
-      const response = <AxiosResponse<AladdinDeviceEntity>>await this.session.post(
-        `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}/door/${door.index}/command`,
-        {
-          command_key: commandKey,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${await this.getOauthToken()}`,
+      let response;
+      try {
+        response = await this.session.post(
+          `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}/door/${door.index}/command`,
+          {
+            command_key: commandKey,
           },
-        },
-      );
-      this.log.debug('[API] Genie %s response: %s', commandKey, JSON.stringify(response.data));
+          {
+            headers: {
+              Authorization: `Bearer ${await this.getOauthToken()}`,
+            },
+          },
+        );
+      } catch (error: unknown) {
+        if (error instanceof Error) {
+          this.log.error(
+            '[API] An error occurred sending command %s to door %s; %s',
+            commandKey,
+            door.name,
+            error.message,
+          );
+        }
+        return;
+      }
+
+      if (this.config.logApiResponses) {
+        this.log.debug('[API] Genie %s response: %s', commandKey, JSON.stringify(response.data));
+      }
 
       await this.cache.del(AladdinConnect.doorStatusCacheKey(door));
     });
   }
 
-  private async getOauthToken(): Promise<string> {
+  private async getOauthToken(): Promise<string | null> {
     return this.cache.wrap(
       'getOauthToken',
       async () => {
@@ -334,15 +397,24 @@ export class AladdinConnect {
         data.append('username', this.config.username);
         data.append('password', Buffer.from(this.config.password).toString('base64'));
 
-        const response = <AxiosResponse<AladdinOauthResponse>>await this.session.post(
-          `https://${AladdinConnect.API_HOST}/IOS/oauth/token`,
-          data,
-          {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
+        let response;
+        try {
+          response = <AxiosResponse<AladdinOauthResponse>>await this.session.post(
+            `https://${AladdinConnect.API_HOST}/IOS/oauth/token`,
+            data,
+            {
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
             },
-          },
-        );
+          );
+        } catch (error: unknown) {
+          if (error instanceof Error) {
+            this.log.error('[API] An error occurred getting oauth token; %s', error.message);
+          }
+          return null;
+        }
+
         return response.data.access_token;
       },
       { ttl: this.userInfoCacheTtl },
