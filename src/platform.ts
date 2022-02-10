@@ -14,7 +14,7 @@ import {
   GenieAladdinConnectGarageDoorAccessory,
   GenieAladdinConnectPlatformAccessoryContext,
 } from './platformAccessory';
-import { AladdinConnect, AladdinConnectConfig } from './aladdinConnect';
+import { AladdinConnect, AladdinConnectConfig, AladdinDoor } from './aladdinConnect';
 
 export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
@@ -38,7 +38,15 @@ export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlu
   }
 
   async discoverDevices() {
-    const doors = await this.aladdinConnect.getAllDoors();
+    let doors: AladdinDoor[];
+    try {
+      doors = await this.aladdinConnect.getAllDoors();
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        this.log.error('Failed to load doors from account; skipping discovery');
+      }
+      return;
+    }
     const discoveredUUIDs: Set<string> = new Set();
 
     for (const door of doors) {

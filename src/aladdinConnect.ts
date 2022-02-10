@@ -170,7 +170,10 @@ export class AladdinConnect {
         ...AladdinConnect.DEFAULT_HEADERS,
       },
     });
-    axiosRetry(this.session, { retries: 3 });
+    axiosRetry(this.session, {
+      retries: 3,
+      retryCondition: (error) => !error.response || error.response.status >= 400,
+    });
   }
 
   subscribe(door: AladdinDoor, func: (info: AladdinDoorStatusInfo) => void): Token {
@@ -196,12 +199,7 @@ export class AladdinConnect {
         try {
           PubSub.publish(topic, await this.getDoorStatus(door));
         } catch (error: unknown) {
-          if (error instanceof Error) {
-            this.log.error(
-              '[API] An error occurred polling for a status update; %s',
-              error.message,
-            );
-          }
+          // getDoorStatus() logs any errors already.
         }
         setTimeout(poll, this.pollInterval);
       };
@@ -222,17 +220,13 @@ export class AladdinConnect {
         this.cache.wrap(
           'getAllDoors',
           async () => {
-            const token = await this.getOauthToken();
-            if (!token) {
-              return [];
-            }
             let response;
             try {
               response = <AxiosResponse<AladdinConfigurationEntity>>await this.session.get(
                 `https://${AladdinConnect.API_HOST}/IOS/configuration`,
                 {
                   headers: {
-                    Authorization: `Bearer ${token}`,
+                    Authorization: `Bearer ${await this.getOauthToken()}`,
                   },
                 },
               );
@@ -243,7 +237,7 @@ export class AladdinConnect {
                   error.message,
                 );
               }
-              return [];
+              throw error;
             }
 
             if (this.config.logApiResponses) {
@@ -274,24 +268,20 @@ export class AladdinConnect {
     );
   }
 
-  async getDoorStatus(door: AladdinDoor): Promise<AladdinDoorStatusInfo | null> {
+  async getDoorStatus(door: AladdinDoor): Promise<AladdinDoorStatusInfo> {
     return this.lock.acquire(
       AladdinConnect.DOOR_STATUS_LOCK,
-      async (): Promise<AladdinDoorStatusInfo | null> =>
+      async (): Promise<AladdinDoorStatusInfo> =>
         this.cache.wrap(
           AladdinConnect.doorStatusCacheKey(door),
-          async (): Promise<AladdinDoorStatusInfo | null> => {
-            const token = await this.getOauthToken();
-            if (!token) {
-              return null;
-            }
+          async (): Promise<AladdinDoorStatusInfo> => {
             let response;
             try {
               response = <AxiosResponse<AladdinDeviceEntity>>await this.session.get(
                 `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}`,
                 {
                   headers: {
-                    Authorization: `Bearer ${token}`,
+                    Authorization: `Bearer ${await this.getOauthToken()}`,
                   },
                 },
               );
@@ -299,7 +289,7 @@ export class AladdinConnect {
               if (error instanceof Error) {
                 this.log.error('[API] An error occurred getting device status; %s', error.message);
               }
-              return null;
+              throw error;
             }
             if (this.config.logApiResponses) {
               this.log.debug(
@@ -312,16 +302,12 @@ export class AladdinConnect {
             const doorEntity = response.data.doors.find(
               ({ door_index: index }) => door.index === index,
             );
-            const name = doorEntity?.name;
+            const name = doorEntity?.name || 'Garage Door';
             const status = doorEntity?.status ?? AladdinDoorStatus.UNKNOWN;
             const desiredStatus = doorEntity?.desired_status ?? AladdinDesiredDoorStatus.NONE;
             const linkStatus = doorEntity?.link_status ?? AladdinLink.UNKNOWN;
             const batteryLevel = doorEntity?.battery_level ?? 0;
-
             const fault = !!doorEntity?.fault;
-            if (!name) {
-              return null;
-            }
             return {
               door: {
                 ...door,
@@ -348,11 +334,6 @@ export class AladdinConnect {
 
   async setDoorStatus(door: AladdinDoor, desiredStatus: AladdinDesiredDoorStatus): Promise<void> {
     return this.lock.acquire(AladdinConnect.DOOR_STATUS_LOCK, async () => {
-      const token = await this.getOauthToken();
-      if (!token) {
-        return;
-      }
-
       const commandKey = desiredStatus === AladdinDesiredDoorStatus.OPEN ? 'OpenDoor' : 'CloseDoor';
       let response;
       try {
@@ -376,7 +357,7 @@ export class AladdinConnect {
             error.message,
           );
         }
-        return;
+        throw error;
       }
 
       if (this.config.logApiResponses) {
@@ -387,7 +368,7 @@ export class AladdinConnect {
     });
   }
 
-  private async getOauthToken(): Promise<string | null> {
+  private async getOauthToken(): Promise<string> {
     return this.cache.wrap(
       'getOauthToken',
       async () => {
@@ -412,7 +393,7 @@ export class AladdinConnect {
           if (error instanceof Error) {
             this.log.error('[API] An error occurred getting oauth token; %s', error.message);
           }
-          return null;
+          throw error;
         }
 
         return response.data.access_token;

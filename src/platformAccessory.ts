@@ -194,7 +194,11 @@ export class GenieAladdinConnectGarageDoorAccessory {
       this.door.name,
       AladdinDesiredDoorStatus[desiredStatus],
     );
-    await this.aladdinConnect.setDoorStatus(this.door, desiredStatus);
+    try {
+      await this.aladdinConnect.setDoorStatus(this.door, desiredStatus);
+    } catch (error: unknown) {
+      throw new this.hap.HapStatusError(this.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
+    }
   }
 
   private async getTargetDoorState(): Promise<CharacteristicValue> {
