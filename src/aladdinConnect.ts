@@ -147,6 +147,7 @@ export class AladdinConnect {
   private static readonly DOOR_STATUS_POLL_INTERVAL_MS_MAX = 60 * 1000;
 
   private static readonly API_HOST = '16375mc41i.execute-api.us-east-1.amazonaws.com';
+  private static readonly API_TIMEOUT = 5000;
   private static readonly DEFAULT_HEADERS = {
     'X-API-KEY': '2BcHhgzjAa58BXkpbYM977jFvr3pJUhH52nflMuS',
   };
@@ -165,7 +166,7 @@ export class AladdinConnect {
     });
     this.session = axios.create({
       httpsAgent: new https.Agent({ keepAlive: true }),
-      timeout: 5000,
+      timeout: AladdinConnect.API_TIMEOUT,
       headers: {
         ...AladdinConnect.DEFAULT_HEADERS,
       },
@@ -173,6 +174,7 @@ export class AladdinConnect {
     axiosRetry(this.session, {
       retries: 3,
       retryCondition: (error) => !error.response || error.response.status >= 400,
+      shouldResetTimeout: true,
     });
   }
 
