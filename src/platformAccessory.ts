@@ -21,16 +21,17 @@ export class GenieAladdinConnectGarageDoorAccessory {
   private readonly door = this.context.door;
   private readonly id: string = `${this.door.deviceId}:${this.door.index}`;
 
+  private readonly targetStateCharacteristic: Characteristic;
+  private readonly currentStateCharacteristic: Characteristic;
+  private readonly obstructionDetectedCharacteristic: Characteristic;
+  private readonly batteryLevelCharacteristic: Characteristic | null = null;
+  private readonly statusLowBatteryCharacteristic: Characteristic | null = null;
+
   private _currentStatus = AladdinDoorStatus.UNKNOWN;
   private _desiredStatus = AladdinDesiredDoorStatus.NONE;
   private _obstructionDetected = false;
   private _batteryLevel = -1;
   private _statusLowBattery = false;
-  private targetStateCharacteristic: Characteristic;
-  private currentStateCharacteristic: Characteristic;
-  private obstructionDetectedCharacteristic: Characteristic;
-  private batteryLevelCharacteristic: Characteristic | null = null;
-  private statusLowBatteryCharacteristic: Characteristic | null = null;
 
   constructor(
     private readonly platform: GenieAladdinConnectHomebridgePlatform,
