@@ -1,7 +1,7 @@
 {
   "displayName": "Homebridge Genie Aladdin Connect Plugin",
   "name": "homebridge-genie-aladdin-connect",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Genie Aladdin Connect plugin for Homebridge.",
   "license": "Apache-2.0",
   "repository": {
