@@ -42,9 +42,8 @@ export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlu
     try {
       doors = await this.aladdinConnect.getAllDoors();
     } catch (error: unknown) {
-      if (error instanceof Error) {
-        this.log.error('Failed to load doors from account; skipping discovery');
-      }
+      this.log.error('Failed to load doors from account; retrying in 5 minutes');
+      setTimeout(this.discoverDevices.bind(this), 5 * 60 * 1000);
       return;
     }
     const discoveredUUIDs: Set<string> = new Set();
