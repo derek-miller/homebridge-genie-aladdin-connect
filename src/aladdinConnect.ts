@@ -148,7 +148,10 @@ export class AladdinConnect {
 
   private static readonly API_HOST = '16375mc41i.execute-api.us-east-1.amazonaws.com';
   private static readonly API_TIMEOUT = 5000;
+  private static readonly API_APP_VERSION = '5.17';
   private static readonly DEFAULT_HEADERS = {
+    app_version: AladdinConnect.API_APP_VERSION,
+    'User-Agent': 'Aladdin%20Connect/75 CFNetwork/1333.0.4 Darwin/21.5.0',
     'X-API-KEY': '2BcHhgzjAa58BXkpbYM977jFvr3pJUhH52nflMuS',
   };
 
@@ -377,6 +380,7 @@ export class AladdinConnect {
         const data = new URLSearchParams();
         data.append('grant_type', 'password');
         data.append('client_id', '1000');
+        data.append('app_version', AladdinConnect.API_APP_VERSION);
         data.append('username', this.config.username);
         data.append('password', Buffer.from(this.config.password).toString('base64'));
 
