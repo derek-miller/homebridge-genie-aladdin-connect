@@ -17,9 +17,8 @@ import {
 import { AladdinConnect, AladdinConnectConfig, AladdinDoor } from './aladdinConnect';
 
 export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlugin {
-  public readonly Service: typeof Service = this.api.hap.Service;
-  public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
-
+  public readonly Service: typeof Service;
+  public readonly Characteristic: typeof Characteristic;
   public readonly accessories: PlatformAccessory[] = [];
   public readonly aladdinConnect: AladdinConnect;
 
@@ -28,6 +27,8 @@ export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlu
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
+    this.Service = this.api.hap.Service;
+    this.Characteristic = this.api.hap.Characteristic;
     this.aladdinConnect = new AladdinConnect(log, <AladdinConnectConfig>(<unknown>config));
     this.api.on(APIEvent.DID_FINISH_LAUNCHING, async () => this.discoverDevices());
   }

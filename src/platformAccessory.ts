@@ -1,7 +1,8 @@
-import { Characteristic, CharacteristicValue, PlatformAccessory } from 'homebridge';
+import { Characteristic, CharacteristicValue, HAP, Logger, PlatformAccessory } from 'homebridge';
 
 import { GenieAladdinConnectHomebridgePlatform } from './platform';
 import {
+  AladdinConnect,
   AladdinDesiredDoorStatus,
   AladdinDoor,
   AladdinDoorStatus,
@@ -14,13 +15,12 @@ export interface GenieAladdinConnectPlatformAccessoryContext {
 }
 
 export class GenieAladdinConnectGarageDoorAccessory {
-  private readonly log = this.platform.log;
-  private readonly hap = this.platform.api.hap;
-  private readonly aladdinConnect = this.platform.aladdinConnect;
-  private readonly context = <GenieAladdinConnectPlatformAccessoryContext>this.accessory.context;
-  private readonly door = this.context.door;
-  private readonly id: string = `${this.door.deviceId}:${this.door.index}`;
-
+  private readonly log: Logger;
+  private readonly hap: HAP;
+  private readonly aladdinConnect: AladdinConnect;
+  private readonly context: GenieAladdinConnectPlatformAccessoryContext;
+  private readonly door: AladdinDoor;
+  private readonly id: string;
   private readonly targetStateCharacteristic: Characteristic;
   private readonly currentStateCharacteristic: Characteristic;
   private readonly obstructionDetectedCharacteristic: Characteristic;
@@ -37,6 +37,12 @@ export class GenieAladdinConnectGarageDoorAccessory {
     private readonly platform: GenieAladdinConnectHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
   ) {
+    this.log = this.platform.log;
+    this.hap = this.platform.api.hap;
+    this.aladdinConnect = this.platform.aladdinConnect;
+    this.context = <GenieAladdinConnectPlatformAccessoryContext>this.accessory.context;
+    this.door = this.context.door;
+    this.id = `${this.door.deviceId}:${this.door.index}`;
     this.accessory
       .getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Genie')
