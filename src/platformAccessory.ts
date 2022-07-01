@@ -30,7 +30,7 @@ export class GenieAladdinConnectGarageDoorAccessory {
   private _currentStatus = AladdinDoorStatus.UNKNOWN;
   private _desiredStatus = AladdinDesiredDoorStatus.NONE;
   private _obstructionDetected = false;
-  private _batteryLevel = -1;
+  private _batteryLevel = 100;
   private _statusLowBattery = false;
 
   constructor(
