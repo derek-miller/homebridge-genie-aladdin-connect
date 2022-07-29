@@ -68,6 +68,11 @@
         "title": "Log Genie API responses in debug mode",
         "type": "boolean",
         "default": false
+      },
+       "showShared": {
+        "title": "Show doors that have been shared with me",
+        "type": "boolean",  
+        "default": false
       }
     }
   },
@@ -86,7 +91,8 @@
         "doorStatusStationaryCacheTtl",
         "doorStatusTransitioningCacheTtl",
         "doorStatusPollInterval",
-        "logApiResponses"
+        "logApiResponses",
+        "showShared"
       ]
     }
   ]
