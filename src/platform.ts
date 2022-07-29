@@ -50,17 +50,19 @@ export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlu
     const discoveredUUIDs: Set<string> = new Set();
 
     for (const door of doors) {
-      const uuid = this.api.hap.uuid.generate(`${door.deviceId}:${door.index}`);
-      discoveredUUIDs.add(uuid);
+      if (door.ownership === 'owned' || this.config.showShared === true) {
+        const uuid = this.api.hap.uuid.generate(`${door.deviceId}:${door.index}`);
+        discoveredUUIDs.add(uuid);
 
-      let accessory = this.accessories.find((accessory) => accessory.UUID === uuid);
-      const existingAccessory = !!accessory;
-      accessory = accessory ?? new this.api.platformAccessory(door.name, uuid);
+        let accessory = this.accessories.find((accessory) => accessory.UUID === uuid);
+        const existingAccessory = !!accessory;
+        accessory = accessory ?? new this.api.platformAccessory(door.name, uuid);
 
-      // Update the accessory context with the door.
-      accessory.context = <GenieAladdinConnectPlatformAccessoryContext>{
+        // Update the accessory context with the door.
+        accessory.context = <GenieAladdinConnectPlatformAccessoryContext>{
         door,
       };
+
 
       if (existingAccessory) {
         this.log.info('Restoring existing accessory from cache:', accessory.displayName);
@@ -70,7 +72,11 @@ export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlu
         this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
       }
       new GenieAladdinConnectGarageDoorAccessory(this, accessory);
+      } else {
+        this.log.info('Not adding door:', door.name, ' because it is not owned by this account.');
+      }
     }
+
     const orphanedAccessories = this.accessories.filter(
       (accessory) => !discoveredUUIDs.has(accessory.UUID),
     );

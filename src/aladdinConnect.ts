@@ -81,6 +81,7 @@ export interface AladdinDoor {
   serialNumber: string;
   name: string;
   hasBatteryLevel: boolean;
+  ownership: string;
 }
 
 export interface AladdinDoorStatusInfo {
@@ -125,6 +126,7 @@ export interface AladdinConnectConfig {
   doorStatusTransitioningCacheTtl?: number;
   doorStatusPollInterval?: number;
   logApiResponses?: boolean;
+  showShared?: boolean;
 }
 
 export class AladdinConnect {
@@ -262,6 +264,7 @@ export class AladdinConnect {
                     // I could not identify a better way to figure this out as I only have
                     // non-battery devices.
                     hasBatteryLevel: (door.battery_level ?? 0) > 0,
+                    ownership: device.ownership,
                   },
               ),
             );
