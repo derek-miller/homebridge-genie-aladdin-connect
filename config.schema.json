@@ -8,8 +8,8 @@
       "name": {
         "title": "Name",
         "type": "string",
-            "default": "Garage Door",
-            "minLength": 1,
+        "default": "Garage Door",
+        "minLength": 1,
         "required": true
       },
       "username": {
