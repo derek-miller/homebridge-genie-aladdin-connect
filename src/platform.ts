@@ -60,18 +60,17 @@ export class GenieAladdinConnectHomebridgePlatform implements DynamicPlatformPlu
 
         // Update the accessory context with the door.
         accessory.context = <GenieAladdinConnectPlatformAccessoryContext>{
-        door,
-      };
+          door,
+        };
 
-
-      if (existingAccessory) {
-        this.log.info('Restoring existing accessory from cache:', accessory.displayName);
-        this.api.updatePlatformAccessories([accessory]);
-      } else {
-        this.log.info('Adding new accessory:', door.name);
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-      }
-      new GenieAladdinConnectGarageDoorAccessory(this, accessory);
+        if (existingAccessory) {
+          this.log.info('Restoring existing accessory from cache:', accessory.displayName);
+          this.api.updatePlatformAccessories([accessory]);
+        } else {
+          this.log.info('Adding new accessory:', door.name);
+          this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        }
+        new GenieAladdinConnectGarageDoorAccessory(this, accessory);
       } else {
         this.log.info('Not adding door:', door.name, ' because it is not owned by this account.');
       }
