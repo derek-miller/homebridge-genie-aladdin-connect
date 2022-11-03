@@ -148,14 +148,13 @@ export class AladdinConnect {
   private static readonly DOOR_STATUS_POLL_INTERVAL_MS_MIN = 5 * 1000;
   private static readonly DOOR_STATUS_POLL_INTERVAL_MS_MAX = 60 * 1000;
 
-  private static readonly API_HOST = 'pxdqkls7aj.execute-api.us-east-1.amazonaws.com';
+  private static readonly API_HOST = '16375mc41i.execute-api.us-east-1.amazonaws.com';
   private static readonly API_TIMEOUT = 5000;
-  private static readonly API_PATH_SEGMENT = 'Android';
-  private static readonly API_APP_VERSION = '5.65';
+  private static readonly API_APP_VERSION = '5.17';
   private static readonly DEFAULT_HEADERS = {
     app_version: AladdinConnect.API_APP_VERSION,
-    'User-Agent': 'Aladdin%20Connect/79 CFNetwork/1399 Darwin/22.1.0',
-    'X-API-KEY': 'fkowarQ0dX9Gj1cbB9Xkx1yXZkd6bzVn5x24sECW',
+    'User-Agent': 'Aladdin%20Connect/75 CFNetwork/1333.0.4 Darwin/21.5.0',
+    'X-API-KEY': '2BcHhgzjAa58BXkpbYM977jFvr3pJUhH52nflMuS',
   };
 
   private static readonly DOOR_STATUS_LOCK = 'DOOR_STATUS';
@@ -231,7 +230,7 @@ export class AladdinConnect {
             let response;
             try {
               response = <AxiosResponse<AladdinConfigurationEntity>>await this.session.get(
-                `https://${AladdinConnect.API_HOST}/${AladdinConnect.API_PATH_SEGMENT}/configuration`,
+                `https://${AladdinConnect.API_HOST}/IOS/configuration`,
                 {
                   headers: {
                     Authorization: `Bearer ${await this.getOauthToken()}`,
@@ -287,7 +286,7 @@ export class AladdinConnect {
             let response;
             try {
               response = <AxiosResponse<AladdinDeviceEntity>>await this.session.get(
-                `https://${AladdinConnect.API_HOST}/${AladdinConnect.API_PATH_SEGMENT}/devices/${door.deviceId}`,
+                `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}`,
                 {
                   headers: {
                     Authorization: `Bearer ${await this.getOauthToken()}`,
@@ -347,7 +346,7 @@ export class AladdinConnect {
       let response;
       try {
         response = await this.session.post(
-          `https://${AladdinConnect.API_HOST}/${AladdinConnect.API_PATH_SEGMENT}/devices/${door.deviceId}/door/${door.index}/command`,
+          `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}/door/${door.index}/command`,
           {
             command_key: commandKey,
           },
@@ -391,7 +390,7 @@ export class AladdinConnect {
         let response;
         try {
           response = <AxiosResponse<AladdinOauthResponse>>await this.session.post(
-            `https://${AladdinConnect.API_HOST}/${AladdinConnect.API_PATH_SEGMENT}/oauth/token`,
+            `https://${AladdinConnect.API_HOST}/IOS/oauth/token`,
             data,
             {
               headers: {
