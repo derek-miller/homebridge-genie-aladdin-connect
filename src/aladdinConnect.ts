@@ -389,31 +389,37 @@ export class AladdinConnect {
       await this.cache.wrap(
         'getOperatorAccessToken',
         async () => {
-          const data = new URLSearchParams();
-          data.append('app_version', AladdinConnect.API_APP_VERSION);
-          data.append('brand', 'ALADDIN');
-          data.append('platform', 'IOS');
-          data.append('password', Buffer.from(this.config.password).toString('base64'));
-          data.append('model', 'iPhone15,2');
-          data.append('client_id', '1000');
-          data.append('os_version', '16.1');
-          data.append('grant_type', 'password');
-          data.append('username', this.config.username);
-          data.append('build_number', '79');
-
           let response;
           try {
             response = <AxiosResponse<AladdinOperatorCredentialsOauthResponse>>(
-              await this.session.post(`https://${AladdinConnect.API_HOST}/IOS/oauth/token`, data, {
-                headers: {
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                  Authorization: `Bearer ${await this.getClientAccessToken()}`,
+              await this.session.post(
+                `https://${AladdinConnect.API_HOST}/IOS/oauth/token`,
+                new URLSearchParams({
+                  app_version: AladdinConnect.API_APP_VERSION,
+                  brand: 'ALADDIN',
+                  build_number: '79',
+                  client_id: '1000',
+                  grant_type: 'password',
+                  model: 'iPhone15,2',
+                  os_version: '16.1',
+                  password: Buffer.from(this.config.password).toString('base64'),
+                  platform: 'IOS',
+                  username: this.config.username,
+                }),
+                {
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    Authorization: `Bearer ${await this.getClientAccessToken()}`,
+                  },
                 },
-              })
+              )
             );
           } catch (error: unknown) {
             if (error instanceof Error) {
-              this.log.error('[API] An error occurred getting oauth token; %s', error.message);
+              this.log.error(
+                '[API] An error occurred getting operator oauth token; %s',
+                error.message,
+              );
             }
             throw error;
           }
@@ -430,25 +436,31 @@ export class AladdinConnect {
       await this.cache.wrap(
         'getClientAccessToken',
         async () => {
-          const data = new URLSearchParams();
-          data.append('brand', 'ALADDIN');
-          data.append('client_id', '1000');
-          data.append('client_secret', '6081EBE9A52091D420CD04125D12BDC5');
-          data.append('platform', 'IOS');
-          data.append('grant_type', 'client_credentials');
-
           let response;
           try {
             response = <AxiosResponse<AladdinClientCredentialsOauthResponse>>(
-              await this.session.post(`https://${AladdinConnect.API_HOST}/IOS/oauth/token`, data, {
-                headers: {
-                  'Content-Type': 'application/x-www-form-urlencoded',
+              await this.session.post(
+                `https://${AladdinConnect.API_HOST}/IOS/oauth/token`,
+                new URLSearchParams({
+                  brand: 'ALADDIN',
+                  client_id: '1000',
+                  client_secret: '6081EBE9A52091D420CD04125D12BDC5',
+                  grant_type: 'client_credentials',
+                  platform: 'IOS',
+                }),
+                {
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                  },
                 },
-              })
+              )
             );
           } catch (error: unknown) {
             if (error instanceof Error) {
-              this.log.error('[API] An error occurred getting oauth token; %s', error.message);
+              this.log.error(
+                '[API] An error occurred getting client oauth token; %s',
+                error.message,
+              );
             }
             throw error;
           }
