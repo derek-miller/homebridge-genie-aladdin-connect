@@ -9,13 +9,21 @@ import Token = PubSubJS.Token;
 import AsyncLock from 'async-lock';
 import { URLSearchParams } from 'url';
 
-interface AladdinOauthResponse {
+interface AladdinOperatorCredentialsOauthResponse {
   refresh_token: string;
   token_type: 'bearer';
   user_id: number;
   expires_in: number;
   access_token: string;
   scope: 'operator';
+}
+
+interface AladdinClientCredentialsOauthResponse {
+  refresh_token: string;
+  token_type: 'bearer';
+  expires_in: number;
+  scope: 'client';
+  access_token: string;
 }
 
 interface AladdinConfigurationEntity {
@@ -148,14 +156,13 @@ export class AladdinConnect {
   private static readonly DOOR_STATUS_POLL_INTERVAL_MS_MIN = 5 * 1000;
   private static readonly DOOR_STATUS_POLL_INTERVAL_MS_MAX = 60 * 1000;
 
-  private static readonly API_HOST = 'pxdqkls7aj.execute-api.us-east-1.amazonaws.com';
+  private static readonly API_HOST = '16375mc41i.execute-api.us-east-1.amazonaws.com';
   private static readonly API_TIMEOUT = 5000;
-  private static readonly API_PATH_SEGMENT = 'Android';
-  private static readonly API_APP_VERSION = '5.65';
+  private static readonly API_APP_VERSION = '5.18';
   private static readonly DEFAULT_HEADERS = {
     app_version: AladdinConnect.API_APP_VERSION,
     'User-Agent': 'Aladdin%20Connect/79 CFNetwork/1399 Darwin/22.1.0',
-    'X-API-KEY': 'fkowarQ0dX9Gj1cbB9Xkx1yXZkd6bzVn5x24sECW',
+    'X-API-KEY': '2BcHhgzjAa58BXkpbYM977jFvr3pJUhH52nflMuS',
   };
 
   private static readonly DOOR_STATUS_LOCK = 'DOOR_STATUS';
@@ -231,10 +238,10 @@ export class AladdinConnect {
             let response;
             try {
               response = <AxiosResponse<AladdinConfigurationEntity>>await this.session.get(
-                `https://${AladdinConnect.API_HOST}/${AladdinConnect.API_PATH_SEGMENT}/configuration`,
+                `https://${AladdinConnect.API_HOST}/IOS/configuration`,
                 {
                   headers: {
-                    Authorization: `Bearer ${await this.getOauthToken()}`,
+                    Authorization: `Bearer ${await this.getOperatorAccessToken()}`,
                   },
                 },
               );
@@ -287,10 +294,10 @@ export class AladdinConnect {
             let response;
             try {
               response = <AxiosResponse<AladdinDeviceEntity>>await this.session.get(
-                `https://${AladdinConnect.API_HOST}/${AladdinConnect.API_PATH_SEGMENT}/devices/${door.deviceId}`,
+                `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}`,
                 {
                   headers: {
-                    Authorization: `Bearer ${await this.getOauthToken()}`,
+                    Authorization: `Bearer ${await this.getOperatorAccessToken()}`,
                   },
                 },
               );
@@ -347,13 +354,13 @@ export class AladdinConnect {
       let response;
       try {
         response = await this.session.post(
-          `https://${AladdinConnect.API_HOST}/${AladdinConnect.API_PATH_SEGMENT}/devices/${door.deviceId}/door/${door.index}/command`,
+          `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}/door/${door.index}/command`,
           {
             command_key: commandKey,
           },
           {
             headers: {
-              Authorization: `Bearer ${await this.getOauthToken()}`,
+              Authorization: `Bearer ${await this.getOperatorAccessToken()}`,
             },
           },
         );
@@ -377,39 +384,92 @@ export class AladdinConnect {
     });
   }
 
-  private async getOauthToken(): Promise<string> {
-    return this.cache.wrap(
-      'getOauthToken',
-      async () => {
-        const data = new URLSearchParams();
-        data.append('grant_type', 'password');
-        data.append('client_id', '1000');
-        data.append('app_version', AladdinConnect.API_APP_VERSION);
-        data.append('username', this.config.username);
-        data.append('password', Buffer.from(this.config.password).toString('base64'));
-
-        let response;
-        try {
-          response = <AxiosResponse<AladdinOauthResponse>>await this.session.post(
-            `https://${AladdinConnect.API_HOST}/${AladdinConnect.API_PATH_SEGMENT}/oauth/token`,
-            data,
-            {
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-              },
-            },
-          );
-        } catch (error: unknown) {
-          if (error instanceof Error) {
-            this.log.error('[API] An error occurred getting oauth token; %s', error.message);
+  private async getOperatorAccessToken(): Promise<string> {
+    return (
+      await this.cache.wrap(
+        'getOperatorAccessToken',
+        async () => {
+          let response;
+          try {
+            response = <AxiosResponse<AladdinOperatorCredentialsOauthResponse>>(
+              await this.session.post(
+                `https://${AladdinConnect.API_HOST}/IOS/oauth/token`,
+                new URLSearchParams({
+                  app_version: AladdinConnect.API_APP_VERSION,
+                  brand: 'ALADDIN',
+                  build_number: '79',
+                  client_id: '1000',
+                  grant_type: 'password',
+                  model: 'iPhone15,2',
+                  os_version: '16.1',
+                  password: Buffer.from(this.config.password).toString('base64'),
+                  platform: 'IOS',
+                  username: this.config.username,
+                }),
+                {
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    Authorization: `Bearer ${await this.getClientAccessToken()}`,
+                  },
+                },
+              )
+            );
+          } catch (error: unknown) {
+            if (error instanceof Error) {
+              this.log.error(
+                '[API] An error occurred getting operator oauth token; %s',
+                error.message,
+              );
+            }
+            throw error;
           }
-          throw error;
-        }
 
-        return response.data.access_token;
-      },
-      { ttl: this.userInfoCacheTtl },
-    );
+          return response.data;
+        },
+        { ttl: ({ expires_in: expiresIn }) => expiresIn - 30 },
+      )
+    ).access_token;
+  }
+
+  private async getClientAccessToken(): Promise<string> {
+    return (
+      await this.cache.wrap(
+        'getClientAccessToken',
+        async () => {
+          let response;
+          try {
+            response = <AxiosResponse<AladdinClientCredentialsOauthResponse>>(
+              await this.session.post(
+                `https://${AladdinConnect.API_HOST}/IOS/oauth/token`,
+                new URLSearchParams({
+                  brand: 'ALADDIN',
+                  client_id: '1000',
+                  client_secret: '6081EBE9A52091D420CD04125D12BDC5',
+                  grant_type: 'client_credentials',
+                  platform: 'IOS',
+                }),
+                {
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                  },
+                },
+              )
+            );
+          } catch (error: unknown) {
+            if (error instanceof Error) {
+              this.log.error(
+                '[API] An error occurred getting client oauth token; %s',
+                error.message,
+              );
+            }
+            throw error;
+          }
+
+          return response.data;
+        },
+        { ttl: ({ expires_in: expiresIn }) => expiresIn - 30 },
+      )
+    ).access_token;
   }
 
   private get userInfoCacheTtl(): number {
