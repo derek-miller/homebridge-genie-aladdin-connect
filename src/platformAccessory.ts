@@ -196,9 +196,7 @@ export class GenieAladdinConnectGarageDoorAccessory {
 
   private async setTargetDoorState(value: CharacteristicValue): Promise<void> {
     const desiredStatus = this.convertTargetStateValueToDesiredStatus(value);
-    if (
-      desiredStatus === this.desiredStatus
-    ) {
+    if (desiredStatus === this.desiredStatus) {
       this.log.debug(
         '[%s] Set Characteristic TargetDoorState -> %s, already set TargetDoorState -> %s. Cancelling.',
         this.door.name,
