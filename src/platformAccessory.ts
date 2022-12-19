@@ -201,7 +201,7 @@ export class GenieAladdinConnectGarageDoorAccessory {
         '[%s] Set Characteristic TargetDoorState -> %s, already set TargetDoorState -> %s. Cancelling.',
         this.door.name,
         AladdinDesiredDoorStatus[desiredStatus],
-        AladdinDoorStatus[this.desiredStatus],
+        AladdinDesiredDoorStatus[this.desiredStatus],
       );
       return;
     }
