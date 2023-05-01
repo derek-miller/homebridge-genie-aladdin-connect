@@ -216,7 +216,7 @@ export class AladdinConnect {
         } catch (error: unknown) {
           // getDoorStatus() logs any errors already.
         }
-        setTimeout(poll, this.pollInterval);
+        setTimeout(poll, this.pollIntervalMs);
       };
       setTimeout(poll, 0);
     }
@@ -504,7 +504,7 @@ export class AladdinConnect {
     );
   }
 
-  private get pollInterval(): number {
+  private get pollIntervalMs(): number {
     return Math.max(
       AladdinConnect.DOOR_STATUS_POLL_INTERVAL_MS_MIN,
       Math.min(
