@@ -7,95 +7,74 @@ import axiosRetry from 'axios-retry';
 import PubSub from 'pubsub-js';
 import Token = PubSubJS.Token;
 import AsyncLock from 'async-lock';
-import { URLSearchParams } from 'url';
+import { createHmac } from 'crypto';
 
-interface AladdinOperatorCredentialsOauthResponse {
-  refresh_token: string;
-  token_type: 'bearer';
-  user_id: number;
-  expires_in: number;
-  access_token: string;
-  scope: 'operator';
+interface AwsCognitoInitiateAuthResponse {
+  AuthenticationResult: AwsCognitoAuthenticationResult;
+  ChallengeParameters: never;
 }
 
-interface AladdinClientCredentialsOauthResponse {
-  refresh_token: string;
-  token_type: 'bearer';
-  expires_in: number;
-  scope: 'client';
-  access_token: string;
+interface AwsCognitoAuthenticationResult {
+  RefreshToken: string;
+  TokenType: 'Bearer';
+  ExpiresIn: number;
+  IdToken: string;
+  AccessToken: string;
 }
 
-interface AladdinConfigurationEntity {
+interface AladdinDevicesEntity {
   devices: AladdinDeviceEntity[];
 }
 
 interface AladdinDeviceEntity {
-  is_locked: boolean;
-  family: number;
   id: number;
-  legacy_id: string;
-  location_id: number;
+  serial_number: string;
+  name: string;
+  is_locked: boolean;
   ssid: string;
-  updated_at: string;
-  user_id: number;
+  user_id: string;
   rssi: number;
-  model: string;
-  description: string;
-  legacy_key: string;
-  created_at: string;
-  lua_version: string;
-  timezone: string;
   status: number;
-  doors: AladdinDoorEntity[];
   is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  model: string;
+  family: number;
+  vendor: string;
+  timezone: string;
   zipcode: string;
   is_expired: boolean;
-  location_name: string;
-  serial: string;
-  vendor: string;
-  ownership: string;
-  name: string;
   is_updating_firmware: boolean;
+  doors: AladdinDoorEntity[];
+  software_version: string;
+  ownership: string;
 }
 
 interface AladdinDoorEntity {
-  desired_door_status_outcome: string;
-  updated_at: string;
-  desired_door_status: string;
-  id: number;
-  user_id: number;
-  vehicle_color: string;
-  door_index: number;
-  icon: number;
-  link_status: number;
-  door_updated_at: string;
-  created_at: string;
-  desired_status: number;
-  status: number;
-  fault: number;
-  ble_strength: number;
-  is_enabled: boolean;
+  id: string;
   battery_level: number;
-  device_id: number;
-  name: string;
+  created_at: string;
+  updated_at: string;
+  is_enabled: boolean;
+  status: number;
   vehicle_type: string;
+  vehicle_color: string;
+  link_status: number;
+  name: string;
+  ble_strength: number;
+  door_index: number;
+  fault?: number;
 }
 
 export interface AladdinDoor {
   deviceId: number;
-  id: number;
+  id: string;
   index: number;
   serialNumber: string;
   name: string;
   hasBatteryLevel: boolean;
   ownership: string;
-}
-
-export interface AladdinDoorStatusInfo {
-  door: AladdinDoor;
   status: AladdinDoorStatus;
-  desiredStatus: AladdinDesiredDoorStatus;
   batteryPercent: number | null;
   fault: boolean;
 }
@@ -129,7 +108,6 @@ export interface AladdinConnectConfig {
   username: string;
   password: string;
   batteryLowLevel?: number;
-  userInfoCacheTtl?: number;
   doorStatusStationaryCacheTtl?: number;
   doorStatusTransitioningCacheTtl?: number;
   doorStatusPollInterval?: number;
@@ -139,10 +117,6 @@ export interface AladdinConnectConfig {
 
 export class AladdinConnect {
   private static readonly PUB_SUB_DOOR_STATUS_TOPIC = 'door';
-
-  private static readonly USER_DATA_CACHE_TTL_S_DEFAULT = 60 * 60;
-  private static readonly USER_DATA_CACHE_TTL_S_MIN = 5 * 60;
-  private static readonly USER_DATA_CACHE_TTL_S_MAX = 24 * 60 * 60;
 
   private static readonly DOOR_STATUS_STATIONARY_CACHE_TTL_S_DEFAULT = 15;
   private static readonly DOOR_STATUS_STATIONARY_CACHE_TTL_S_MIN = 5;
@@ -156,14 +130,13 @@ export class AladdinConnect {
   private static readonly DOOR_STATUS_POLL_INTERVAL_MS_MIN = 5 * 1000;
   private static readonly DOOR_STATUS_POLL_INTERVAL_MS_MAX = 60 * 1000;
 
-  private static readonly API_HOST = '16375mc41i.execute-api.us-east-1.amazonaws.com';
+  private static readonly API_HOST = 'api.smartgarage.systems';
   private static readonly API_TIMEOUT = 5000;
-  private static readonly API_APP_VERSION = '5.18';
-  private static readonly DEFAULT_HEADERS = {
-    app_version: AladdinConnect.API_APP_VERSION,
-    'User-Agent': 'Aladdin%20Connect/79 CFNetwork/1399 Darwin/22.1.0',
-    'X-API-KEY': '2BcHhgzjAa58BXkpbYM977jFvr3pJUhH52nflMuS',
-  };
+
+  private static readonly AUTH_HOST = 'cognito-idp.us-east-2.amazonaws.com';
+  private static readonly AUTH_CLIENT_ID = '27iic8c3bvslqngl3hso83t74b';
+  private static readonly AUTH_CLIENT_SECRET =
+    '7bokto0ep96055k42fnrmuth84k7jdcjablestb7j53o8lp63v5';
 
   private static readonly DOOR_STATUS_LOCK = 'DOOR_STATUS';
 
@@ -180,9 +153,6 @@ export class AladdinConnect {
     this.session = axios.create({
       httpsAgent: new https.Agent({ keepAlive: true }),
       timeout: AladdinConnect.API_TIMEOUT,
-      headers: {
-        ...AladdinConnect.DEFAULT_HEADERS,
-      },
     });
     axiosRetry(this.session, {
       retries: 3,
@@ -191,9 +161,10 @@ export class AladdinConnect {
     });
   }
 
-  subscribe(door: AladdinDoor, func: (info: AladdinDoorStatusInfo) => void): Token {
-    const topic = AladdinConnect.doorStatusTopic(door);
-    const token = PubSub.subscribe(topic, async (_, data) => {
+  subscribe(door: AladdinDoor, func: (info: AladdinDoor) => void): Token {
+    const isFirstSubscription =
+      PubSub.countSubscriptions(AladdinConnect.PUB_SUB_DOOR_STATUS_TOPIC) === 0;
+    const token = PubSub.subscribe(AladdinConnect.doorStatusTopic(door), async (_, data) => {
       if (!data) {
         return;
       }
@@ -202,17 +173,19 @@ export class AladdinConnect {
     this.log.debug('[API] Status subscription added for door %s [token=%s]', door.name, token);
 
     // When this is the first subscription, start polling to publish updates.
-    if (PubSub.countSubscriptions(topic) === 1) {
+    if (isFirstSubscription) {
       const poll = async () => {
         // Stop polling when there are no active subscriptions.
-        if (PubSub.countSubscriptions(topic) === 0) {
+        if (PubSub.countSubscriptions(AladdinConnect.PUB_SUB_DOOR_STATUS_TOPIC) === 0) {
           this.log.debug('[API] There are no door status subscriptions; skipping poll');
           return;
         }
         // Acquire the status lock before emitting any new events.
-        this.log.debug('[API] Polling status for door %s', door.name);
+        this.log.debug('[API] Polling status for all doors');
         try {
-          PubSub.publish(topic, await this.getDoorStatus(door));
+          (await this.getAllDoors()).map((doorStatus) => {
+            PubSub.publish(AladdinConnect.doorStatusTopic(doorStatus), doorStatus);
+          });
         } catch (error: unknown) {
           // getDoorStatus() logs any errors already.
         }
@@ -223,6 +196,7 @@ export class AladdinConnect {
     return token;
   }
 
+  // noinspection JSUnusedGlobalSymbols
   unsubscribe(token: Token): void {
     PubSub.unsubscribe(token);
     this.log.debug('[API] Status subscription removed for token %s', token);
@@ -235,16 +209,13 @@ export class AladdinConnect {
         this.cache.wrap(
           'getAllDoors',
           async () => {
-            let response;
+            let response: AxiosResponse<AladdinDevicesEntity>;
             try {
-              response = <AxiosResponse<AladdinConfigurationEntity>>await this.session.get(
-                `https://${AladdinConnect.API_HOST}/IOS/configuration`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${await this.getOperatorAccessToken()}`,
-                  },
+              response = await this.session.get(`https://${AladdinConnect.API_HOST}/deep-refresh`, {
+                headers: {
+                  Authorization: `Bearer ${await this.getAccessToken()}`,
                 },
-              );
+              });
             } catch (error: unknown) {
               if (error instanceof Error) {
                 this.log.error(
@@ -260,86 +231,37 @@ export class AladdinConnect {
             }
 
             return response.data.devices.flatMap((device) =>
-              device.doors.map(
-                (door) =>
-                  <AladdinDoor>{
-                    deviceId: device.id,
-                    id: door.id,
-                    index: door.door_index,
-                    serialNumber: device.serial,
-                    name: door.name,
-                    // The devices that do not have batteries report a level of 0.
-                    // I could not identify a better way to figure this out as I only have
-                    // non-battery devices.
-                    hasBatteryLevel: (door.battery_level ?? 0) > 0,
-                    ownership: device.ownership,
-                  },
-              ),
+              device.doors.map((door) => {
+                const name = door?.name || 'Garage Door';
+                const status = door?.status ?? AladdinDoorStatus.UNKNOWN;
+                const linkStatus = door?.link_status ?? AladdinLink.UNKNOWN;
+                const batteryLevel = door?.battery_level ?? 0;
+                const fault = !!door?.fault;
+                return {
+                  deviceId: device.id,
+                  id: door.id,
+                  index: door.door_index,
+                  serialNumber: device.serial_number,
+                  name,
+                  // The devices that do not have batteries report a level of 0.
+                  // I could not identify a better way to figure this out as I only have
+                  // non-battery devices.
+                  hasBatteryLevel: (door.battery_level ?? 0) > 0,
+                  ownership: device.ownership,
+                  status: status,
+                  batteryPercent:
+                    linkStatus === AladdinLink.CONNECTED && batteryLevel > 0 ? batteryLevel : null,
+                  fault,
+                };
+              }),
             );
           },
           {
-            ttl: this.userInfoCacheTtl,
-          },
-        ),
-    );
-  }
-
-  async getDoorStatus(door: AladdinDoor): Promise<AladdinDoorStatusInfo> {
-    return this.lock.acquire(
-      AladdinConnect.DOOR_STATUS_LOCK,
-      async (): Promise<AladdinDoorStatusInfo> =>
-        this.cache.wrap(
-          AladdinConnect.doorStatusCacheKey(door),
-          async (): Promise<AladdinDoorStatusInfo> => {
-            let response;
-            try {
-              response = <AxiosResponse<AladdinDeviceEntity>>await this.session.get(
-                `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${await this.getOperatorAccessToken()}`,
-                  },
-                },
-              );
-            } catch (error: unknown) {
-              if (error instanceof Error) {
-                this.log.error('[API] An error occurred getting device status; %s', error.message);
-              }
-              throw error;
-            }
-            if (this.config.logApiResponses) {
-              this.log.debug(
-                '[API] Device %s configuration response: %s',
-                door.deviceId,
-                JSON.stringify(response.data),
-              );
-            }
-
-            const doorEntity = response.data.doors.find(
-              ({ door_index: index }) => door.index === index,
-            );
-            const name = doorEntity?.name || 'Garage Door';
-            const status = doorEntity?.status ?? AladdinDoorStatus.UNKNOWN;
-            const desiredStatus = doorEntity?.desired_status ?? AladdinDesiredDoorStatus.NONE;
-            const linkStatus = doorEntity?.link_status ?? AladdinLink.UNKNOWN;
-            const batteryLevel = doorEntity?.battery_level ?? 0;
-            const fault = !!doorEntity?.fault;
-            return {
-              door: {
-                ...door,
-                name,
-              },
-              status: status,
-              desiredStatus,
-              batteryPercent:
-                linkStatus === AladdinLink.CONNECTED && batteryLevel > 0 ? batteryLevel : null,
-              fault,
-            };
-          },
-          {
-            ttl: (info) =>
-              [AladdinDoorStatus.CLOSING, AladdinDoorStatus.OPENING].includes(
-                info?.status ?? AladdinDoorStatus.UNKNOWN,
+            ttl: (doors: AladdinDoor[]) =>
+              doors.some((door) =>
+                [AladdinDoorStatus.CLOSING, AladdinDoorStatus.OPENING].includes(
+                  door?.status ?? AladdinDoorStatus.UNKNOWN,
+                ),
               )
                 ? this.doorStatusTransitioningCacheTtl
                 : this.doorStatusStationaryCacheTtl,
@@ -350,17 +272,17 @@ export class AladdinConnect {
 
   async setDoorStatus(door: AladdinDoor, desiredStatus: AladdinDesiredDoorStatus): Promise<void> {
     return this.lock.acquire(AladdinConnect.DOOR_STATUS_LOCK, async () => {
-      const commandKey = desiredStatus === AladdinDesiredDoorStatus.OPEN ? 'OpenDoor' : 'CloseDoor';
-      let response;
+      const command = desiredStatus === AladdinDesiredDoorStatus.OPEN ? 'OPEN_DOOR' : 'CLOSE_DOOR';
+      let response: AxiosResponse;
       try {
         response = await this.session.post(
-          `https://${AladdinConnect.API_HOST}/IOS/devices/${door.deviceId}/door/${door.index}/command`,
+          `https://${AladdinConnect.API_HOST}/command/devices/${door.deviceId}/doors/${door.index}`,
           {
-            command_key: commandKey,
+            command,
           },
           {
             headers: {
-              Authorization: `Bearer ${await this.getOperatorAccessToken()}`,
+              Authorization: `Bearer ${await this.getAccessToken()}`,
             },
           },
         );
@@ -368,7 +290,7 @@ export class AladdinConnect {
         if (error instanceof Error) {
           this.log.error(
             '[API] An error occurred sending command %s to door %s; %s',
-            commandKey,
+            command,
             door.name,
             error.message,
           );
@@ -377,42 +299,39 @@ export class AladdinConnect {
       }
 
       if (this.config.logApiResponses) {
-        this.log.debug('[API] Genie %s response: %s', commandKey, JSON.stringify(response.data));
+        this.log.debug('[API] Genie %s response: %s', command, JSON.stringify(response.data));
       }
 
       await this.cache.del(AladdinConnect.doorStatusCacheKey(door));
     });
   }
 
-  private async getOperatorAccessToken(): Promise<string> {
+  private async getAccessToken(): Promise<string> {
     return (
       await this.cache.wrap(
-        'getOperatorAccessToken',
+        'getAccessToken',
         async () => {
-          let response;
+          let response: AxiosResponse<AwsCognitoInitiateAuthResponse>;
           try {
-            response = <AxiosResponse<AladdinOperatorCredentialsOauthResponse>>(
-              await this.session.post(
-                `https://${AladdinConnect.API_HOST}/IOS/oauth/token`,
-                new URLSearchParams({
-                  app_version: AladdinConnect.API_APP_VERSION,
-                  brand: 'ALADDIN',
-                  build_number: '79',
-                  client_id: '1000',
-                  grant_type: 'password',
-                  model: 'iPhone15,2',
-                  os_version: '16.1',
-                  password: Buffer.from(this.config.password).toString('base64'),
-                  platform: 'IOS',
-                  username: this.config.username,
-                }),
-                {
-                  headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    Authorization: `Bearer ${await this.getClientAccessToken()}`,
-                  },
+            response = await this.session.post(
+              `https://${AladdinConnect.AUTH_HOST}`,
+              {
+                ClientId: AladdinConnect.AUTH_CLIENT_ID,
+                AuthFlow: 'USER_PASSWORD_AUTH',
+                AuthParameters: {
+                  USERNAME: this.config.username,
+                  PASSWORD: this.config.password,
+                  SECRET_HASH: createHmac('sha256', AladdinConnect.AUTH_CLIENT_SECRET)
+                    .update(this.config.username + AladdinConnect.AUTH_CLIENT_ID)
+                    .digest('base64'),
                 },
-              )
+              },
+              {
+                headers: {
+                  'Content-Type': 'application/x-amz-json-1.1',
+                  'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
+                },
+              },
             );
           } catch (error: unknown) {
             if (error instanceof Error) {
@@ -424,62 +343,11 @@ export class AladdinConnect {
             throw error;
           }
 
-          return response.data;
+          return response.data.AuthenticationResult;
         },
-        { ttl: ({ expires_in: expiresIn }) => expiresIn - 30 },
+        { ttl: ({ ExpiresIn: expiresIn }) => expiresIn - 30 },
       )
-    ).access_token;
-  }
-
-  private async getClientAccessToken(): Promise<string> {
-    return (
-      await this.cache.wrap(
-        'getClientAccessToken',
-        async () => {
-          let response;
-          try {
-            response = <AxiosResponse<AladdinClientCredentialsOauthResponse>>(
-              await this.session.post(
-                `https://${AladdinConnect.API_HOST}/IOS/oauth/token`,
-                new URLSearchParams({
-                  brand: 'ALADDIN',
-                  client_id: '1000',
-                  client_secret: '6081EBE9A52091D420CD04125D12BDC5',
-                  grant_type: 'client_credentials',
-                  platform: 'IOS',
-                }),
-                {
-                  headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                  },
-                },
-              )
-            );
-          } catch (error: unknown) {
-            if (error instanceof Error) {
-              this.log.error(
-                '[API] An error occurred getting client oauth token; %s',
-                error.message,
-              );
-            }
-            throw error;
-          }
-
-          return response.data;
-        },
-        { ttl: ({ expires_in: expiresIn }) => expiresIn - 30 },
-      )
-    ).access_token;
-  }
-
-  private get userInfoCacheTtl(): number {
-    return Math.max(
-      AladdinConnect.USER_DATA_CACHE_TTL_S_MIN,
-      Math.min(
-        AladdinConnect.USER_DATA_CACHE_TTL_S_MAX,
-        this.config.userInfoCacheTtl ?? AladdinConnect.USER_DATA_CACHE_TTL_S_DEFAULT,
-      ),
-    );
+    ).AccessToken;
   }
 
   private get doorStatusStationaryCacheTtl(): number {
