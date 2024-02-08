@@ -32,14 +32,6 @@
         "minimum": 0,
         "maximum": 100
       },
-      "userInfoCacheTtl": {
-        "title": "User info cache TTL (in seconds)",
-        "type": "integer",
-        "default": 3600,
-        "minimum": 300,
-        "maximum": 86400,
-        "required": true
-      },
       "doorStatusStationaryCacheTtl": {
         "title": "Stationary door status cache TTL (in seconds). Used when the door is in a stationary state.",
         "type": "integer",
@@ -87,7 +79,6 @@
       "description": "",
       "items": [
         "batteryLowLevel",
-        "userInfoCacheTtl",
         "doorStatusStationaryCacheTtl",
         "doorStatusTransitioningCacheTtl",
         "doorStatusPollInterval",

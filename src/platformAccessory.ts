@@ -6,7 +6,6 @@ import {
   AladdinDesiredDoorStatus,
   AladdinDoor,
   AladdinDoorStatus,
-  AladdinDoorStatusInfo,
 } from './aladdinConnect';
 import { DEFAULT_STATUS_LOW_BATTERY_PERCENT } from './settings';
 
@@ -78,7 +77,7 @@ export class GenieAladdinConnectGarageDoorAccessory {
         .onGet(this.getStatusLowBattery.bind(this));
     }
 
-    this.aladdinConnect.subscribe(this.door, (info: AladdinDoorStatusInfo) => {
+    this.aladdinConnect.subscribe(this.door, (info: AladdinDoor) => {
       this.currentStatus = info.status;
       this.obstructionDetected =
         // A fault happens when a door fails to open/close twice in a row and then must be operated
@@ -92,12 +91,7 @@ export class GenieAladdinConnectGarageDoorAccessory {
       if (this.door.hasBatteryLevel && info.batteryPercent !== null) {
         this.batteryLevel = info.batteryPercent;
       }
-      // If the desired status is NONE or an obstruction is detected, derive it from the current
-      // status.
-      this.desiredStatus =
-        info.desiredStatus === AladdinDesiredDoorStatus.NONE || this.obstructionDetected
-          ? this.convertStatusToDesiredStatus(this.currentStatus)
-          : info.desiredStatus;
+      this.desiredStatus = this.convertStatusToDesiredStatus(this.currentStatus);
     });
   }
 
