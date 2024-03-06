@@ -35,27 +35,27 @@
     "connect"
   ],
   "dependencies": {
-    "async-lock": "^1.4.0",
-    "axios": "^1.4.0",
-    "axios-retry": "^3.5.1",
-    "cache-manager": "^4.1.0",
+    "async-lock": "^1.4.1",
+    "axios": "^1.6.7",
+    "axios-retry": "^4.0.0",
+    "cache-manager": "4.1.0",
     "form-data": "^4.0.0",
     "pubsub-js": "^1.9.4",
-    "qs": "^6.11.2"
+    "qs": "^6.12.0"
   },
   "devDependencies": {
-    "@types/async-lock": "^1.4.0",
-    "@types/cache-manager": "^4.0.1",
-    "@types/node": "^20.3.2",
-    "@types/pubsub-js": "^1.8.3",
-    "@typescript-eslint/eslint-plugin": "^5.60.1",
-    "@typescript-eslint/parser": "^5.60.1",
-    "eslint": "^8.43.0",
-    "homebridge": "^1.6.1",
+    "@types/async-lock": "^1.4.2",
+    "@types/cache-manager": "4.0.1",
+    "@types/node": "^20.11.25",
+    "@types/pubsub-js": "^1.8.6",
+    "@typescript-eslint/eslint-plugin": "^7.1.1",
+    "@typescript-eslint/parser": "^7.1.1",
+    "eslint": "^8.57.0",
+    "homebridge": "^1.7.0",
     "homebridge-config-ui-x": "^4.55.1",
-    "nodemon": "^2.0.22",
-    "prettier": "^2.8.8",
-    "ts-node": "^10.9.1",
-    "typescript": "^5.1.5"
+    "nodemon": "^3.1.0",
+    "prettier": "^3.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.2"
   }
 }

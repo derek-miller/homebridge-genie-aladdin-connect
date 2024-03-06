@@ -5,7 +5,7 @@ extends:
   - plugin:@typescript-eslint/eslint-recommended
   - plugin:@typescript-eslint/recommended # uses the recommended rules from the @typescript-eslint/eslint-plugin
 parserOptions:
-  ecmaVersion: latest
+  ecmaVersion: 2020
   sourceType: module
 ignorePatterns:
   - dist
@@ -13,6 +13,7 @@ rules:
   quotes:
     - warn
     - single
+    - avoidEscape: true
   semi:
     - "off"
   comma-dangle:

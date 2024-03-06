@@ -144,7 +144,10 @@ export class AladdinConnect {
   private readonly cache: Cache;
   private readonly session: AxiosInstance;
 
-  constructor(public readonly log: Logger, private readonly config: AladdinConnectConfig) {
+  constructor(
+    public readonly log: Logger,
+    private readonly config: AladdinConnectConfig,
+  ) {
     this.cache = cacheManager.caching({
       ttl: 0, // No default ttl
       max: 0, // Infinite capacity
