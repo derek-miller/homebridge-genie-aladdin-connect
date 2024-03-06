@@ -211,7 +211,7 @@ export class AladdinConnect {
           async () => {
             let response: AxiosResponse<AladdinDevicesEntity>;
             try {
-              response = await this.session.get(`https://${AladdinConnect.API_HOST}/deep-refresh`, {
+              response = await this.session.get(`https://${AladdinConnect.API_HOST}/devices`, {
                 headers: {
                   Authorization: `Bearer ${await this.getAccessToken()}`,
                 },
