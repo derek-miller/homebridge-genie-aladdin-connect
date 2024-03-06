@@ -144,7 +144,10 @@ export class AladdinConnect {
   private readonly cache: Cache;
   private readonly session: AxiosInstance;
 
-  constructor(public readonly log: Logger, private readonly config: AladdinConnectConfig) {
+  constructor(
+    public readonly log: Logger,
+    private readonly config: AladdinConnectConfig,
+  ) {
     this.cache = cacheManager.caching({
       ttl: 0, // No default ttl
       max: 0, // Infinite capacity
@@ -211,7 +214,7 @@ export class AladdinConnect {
           async () => {
             let response: AxiosResponse<AladdinDevicesEntity>;
             try {
-              response = await this.session.get(`https://${AladdinConnect.API_HOST}/deep-refresh`, {
+              response = await this.session.get(`https://${AladdinConnect.API_HOST}/devices`, {
                 headers: {
                   Authorization: `Bearer ${await this.getAccessToken()}`,
                 },
